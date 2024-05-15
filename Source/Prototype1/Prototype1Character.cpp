@@ -95,6 +95,14 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	// input is a Vector2D
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
 
+	// If we are grabbing something, send mouse input to hands instead.
+	if (IsGrabbing()) //|| IsHoldingAlt())
+	{
+		MoveHand(LeftHandData, LookAxisVector);
+		MoveHand(RightHandData, LookAxisVector);
+		return;
+	}
+
 	if (Controller != nullptr)
 	{
 		// add yaw and pitch input to controller
@@ -106,12 +114,9 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 void APrototype1Character::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
-
-	TickGrab(LeftHandData, DeltaSeconds);
-	TickGrab(RightHandData, DeltaSeconds);
 }
 
-void APrototype1Character::TickGrab(FHandsContextData& HandData, float DeltaSeconds)
+void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector)
 {
 	if (!HandData.IsGrabbing)
 	{
@@ -120,17 +125,13 @@ void APrototype1Character::TickGrab(FHandsContextData& HandData, float DeltaSeco
 
 	const FVector HandLocation = HandData.GetHitLocation();
 	const FVector HandNormal = HandData.GetHitNormal();
-	const FRotator GrabRot = HandNormal.ToOrientationRotator();
+	//const FRotator GrabRot = HandNormal.ToOrientationRotator();
+	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, FirstPersonCameraComponent->GetRightVector()).Rotator();
 
-	// TODO Optimize
-	const float MinSearchDist = 0.2125 * 100.0f;
-	const float MaxSearchDist = 2.0f * 100.0f;
-	const FVector TraceStart = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MinSearchDist);
-	const FVector TraceEnd = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MaxSearchDist);
-	const FVector TraceDir = TraceEnd - TraceStart;
-	// End of TODO Optimize
-	
-	const FVector GrabTargetPosition = HandData.GetGrabPosition(TraceStart, TraceDir);
+	const FVector MouseMove = FVector(0, LookAxisVector.X, LookAxisVector.Y);
+	const FVector GrabTargetPosition = HandLocation + GrabRot.RotateVector(MouseMove);
+	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseMove.ToString()));
+	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Green, FString::Printf(TEXT("%s"), *GrabTargetPosition.ToString()));
 
 	// Debugs
 	/** GrabRot relative to HandLocation */
@@ -151,6 +152,15 @@ void APrototype1Character::TickGrab(FHandsContextData& HandData, float DeltaSeco
 	const FVector DragOffset = HandLocation - GrabTargetPosition;
 	SetActorLocation(GetActorLocation() + DragOffset);
 
+
+	// TODO Optimize
+	/*const float MinSearchDist = 0.2125 * 100.0f;
+	const float MaxSearchDist = 2.0f * 100.0f;
+	const FVector TraceStart = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MinSearchDist);
+	const FVector TraceEnd = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MaxSearchDist);
+	const FVector TraceDir = TraceEnd - TraceStart;*/
+	// End of TODO Optimize
+	//const FVector GrabTargetPosition = HandData.GetGrabPosition(TraceStart, TraceDir);
 
 	// When we want to GRAB and MOVE an object. do this. Also consider adding a PhysicsHandle instead, if the object is grabbable.
 	//const float DragForce = 500.0f;
@@ -180,7 +190,7 @@ void APrototype1Character::Grab(int HandIndex)
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
-	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
+	//DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
 
 	// Nothing was hit.
 	if (!HitResult.bBlockingHit)

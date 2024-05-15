@@ -137,7 +137,7 @@ protected:
 	/** Called for grabbing input */
 	void Grab(const int HandIndex);
 
-	void TickGrab(FHandsContextData& HandData, float DeltaSeconds);
+	void MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector);
 
 	/** Called for grabbing input */
 	void StopGrabbing(const int HandIndex);
