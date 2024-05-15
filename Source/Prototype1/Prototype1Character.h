@@ -75,7 +75,9 @@ public:
 
 	/** Look Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputAction* LookAction;
+	class UInputAction* LookAction; // Mouse
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
+	class UInputAction* LookAroundAction; // Alt-key, Arma like movement.
 
 	/** Grab Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -108,19 +110,24 @@ public:
 	const bool IsGrabbing();
 	/** End of Hand Utility Functions */
 
+	// Prevents overstretching. We let go if grabbed location is beyond this length.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
-	float ArmsLengthUnits = 54.5f; //45
+	float ArmsLengthUnits = 54.5f; //54.5
 
 protected:
 	virtual void BeginPlay();
-
-	virtual void Tick(float DeltaSeconds) override;
 
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
 
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
+
+	// This is used for when we want to look around while grabbing something.
+	void BeginLookAround(const FInputActionValue& Value);
+
+	// This is used to end look around while grabbing something.
+	void EndLookAround(const FInputActionValue& Value);
 
 	/** Called for grabbing input Right */
 	void GrabR(const FInputActionValue& Value);
@@ -151,5 +158,8 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly)
 	FHandsContextData RightHandData;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite)
+	bool IsLookingAround;
 };
 

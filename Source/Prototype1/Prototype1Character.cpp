@@ -64,6 +64,8 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &APrototype1Character::Look);
+		EnhancedInputComponent->BindAction(LookAroundAction, ETriggerEvent::Started, this, &APrototype1Character::BeginLookAround);
+		EnhancedInputComponent->BindAction(LookAroundAction, ETriggerEvent::Completed, this, &APrototype1Character::EndLookAround);
 
 		// Grabbing
 		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Started, this, &APrototype1Character::GrabL);
@@ -90,13 +92,24 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 	}
 }
 
+void APrototype1Character::BeginLookAround(const FInputActionValue& Value)
+{
+	IsLookingAround = true;
+}
+
+void APrototype1Character::EndLookAround(const FInputActionValue& Value)
+{
+	IsLookingAround = false;
+}
+
 void APrototype1Character::Look(const FInputActionValue& Value)
 {
 	// input is a Vector2D
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
 
 	// If we are grabbing something, send mouse input to hands instead.
-	if (IsGrabbing()) //|| IsHoldingAlt())
+	// But if we are looking around, ignore sending data to hands.
+	if (IsGrabbing() && !IsLookingAround)
 	{
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
@@ -109,11 +122,6 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 		AddControllerYawInput(LookAxisVector.X);
 		AddControllerPitchInput(LookAxisVector.Y);
 	}
-}
-
-void APrototype1Character::Tick(float DeltaSeconds)
-{
-	Super::Tick(DeltaSeconds);
 }
 
 void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector)
@@ -149,8 +157,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	// This effectively only moves the Hand visual.
 	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
+
 	const FVector DragOffset = HandLocation - GrabTargetPosition;
-	SetActorLocation(GetActorLocation() + DragOffset);
+	GetMovementComponent()->AddInputVector(DragOffset); // Acceleration.
+	//GetMovementComponent()->Velocity += DragOffset; // Velocity
+	//SetActorLocation(GetActorLocation() + DragOffset);
 
 
 	// TODO Optimize
