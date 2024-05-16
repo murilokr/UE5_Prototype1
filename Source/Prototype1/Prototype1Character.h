@@ -38,15 +38,15 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector LocalHitNormal;
 
-	// Grab Target Position.
-	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir);
-
 	// Hand Location
 	FVector GetHitLocation();
 
 	FVector GetHitNormal();
 
-	FRotator GetHandRotation();
+	FRotator GetHandRotation(bool bShouldFlip, const FVector CameraRight);
+
+	// Grab Target Position.
+	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir);
 };
 
 

@@ -261,7 +261,8 @@ const FRotator APrototype1Character::GetHandRotation(int HandIndex)
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
-	return HandData.GetHandRotation();
+	// Flip RightHand only.
+	return HandData.GetHandRotation(HandIndex == 0, FirstPersonCameraComponent->GetRightVector());
 }
 
 const bool APrototype1Character::IsGrabbing()
@@ -289,12 +290,6 @@ void APrototype1Character::StopGrabL(const FInputActionValue& Value)
 	StopGrabbing(1);
 }
 
-
-FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVector TraceDir)
-{
-	return TraceStart + TraceDir * GrabPositionT;
-}
-
 FVector FHandsContextData::GetHitLocation()
 {
 	if (!HitResult.Component.IsValid())
@@ -319,16 +314,29 @@ FVector FHandsContextData::GetHitNormal()
 	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHitNormal);
 }
 
-FRotator FHandsContextData::GetHandRotation()
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector CameraRight)
 {
-	const FVector HandNormal = GetHitNormal();
-	const FRotator HandRotation = FRotationMatrix::MakeFromY(HandNormal).Rotator();
+	FVector HandNormal = GetHitNormal();
 	
-	// If right hand, we might want to Inverse the Rotator.
+	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, CameraRight).Rotator();
+	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
+
+	// Invert the normal.
+	if (bShouldFlip)
+	{	
+		HandNormal = -HandNormal;
+	}
+	
+	const FRotator HandRotation = FRotationMatrix::MakeFromYZ(HandNormal, FixedYAxis).Rotator();//FRotationMatrix::MakeFromY(HandNormal).Rotator();
 
 	// Debug
 	DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHitLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
 
 	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
 	return HandRotation;
+}
+
+FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVector TraceDir)
+{
+	return TraceStart + TraceDir * GrabPositionT;
 }
