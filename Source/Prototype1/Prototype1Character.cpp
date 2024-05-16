@@ -131,8 +131,8 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 		return;
 	}
 
-	const FVector HandLocation = HandData.GetHitLocation();
-	const FVector HandNormal = HandData.GetHitNormal();
+	const FVector HandLocation = HandData.GetHandLocation();
+	const FVector HandNormal = HandData.GetHandNormal();
 	//const FRotator GrabRot = HandNormal.ToOrientationRotator();
 	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, FirstPersonCameraComponent->GetRightVector()).Rotator();
 
@@ -159,8 +159,8 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
 
 	const FVector DragOffset = HandLocation - GrabTargetPosition;
-	GetMovementComponent()->AddInputVector(DragOffset); // Acceleration.
-	//GetMovementComponent()->Velocity += DragOffset; // Velocity
+	//GetMovementComponent()->AddInputVector(DragOffset); // Acceleration.
+	GetMovementComponent()->Velocity += DragOffset; // Velocity
 	//SetActorLocation(GetActorLocation() + DragOffset);
 
 
@@ -222,8 +222,8 @@ void APrototype1Character::Grab(int HandIndex)
 	}
 
 	const FTransform HitBoneWorldToLocalTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName).Inverse();
-	HandData.LocalHitLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
-	HandData.LocalHitNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
+	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
+	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
 
 	// Need to enable this later.
 	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
@@ -243,18 +243,18 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	HandData.IsGrabbing = false;
 }
 
-const FVector APrototype1Character::GetHitLocation(int HandIndex)
+const FVector APrototype1Character::GetHandLocation(int HandIndex)
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
-	return HandData.GetHitLocation();;
+	return HandData.GetHandLocation() + HandData.GetHandNormal() * HandSafeZone;
 }
 
-const FVector APrototype1Character::GetHitNormal(int HandIndex)
+const FVector APrototype1Character::GetHandNormal(int HandIndex)
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
-	return HandData.GetHitNormal();
+	return HandData.GetHandNormal();
 }
 
 const FRotator APrototype1Character::GetHandRotation(int HandIndex)
@@ -290,7 +290,7 @@ void APrototype1Character::StopGrabL(const FInputActionValue& Value)
 	StopGrabbing(1);
 }
 
-FVector FHandsContextData::GetHitLocation()
+FVector FHandsContextData::GetHandLocation()
 {
 	if (!HitResult.Component.IsValid())
 	{
@@ -299,10 +299,10 @@ FVector FHandsContextData::GetHitLocation()
 
 	const FTransform HitBoneLocalToWorldTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName);
 
-	return HitBoneLocalToWorldTransform.TransformPosition(LocalHitLocation);
+	return HitBoneLocalToWorldTransform.TransformPosition(LocalHandLocation);
 }
 
-FVector FHandsContextData::GetHitNormal()
+FVector FHandsContextData::GetHandNormal()
 {
 	if (!HitResult.Component.IsValid())
 	{
@@ -311,12 +311,12 @@ FVector FHandsContextData::GetHitNormal()
 
 	const FTransform HitBoneLocalToWorldTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName);
 
-	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHitNormal);
+	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHandNormal);
 }
 
 FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector CameraRight)
 {
-	FVector HandNormal = GetHitNormal();
+	FVector HandNormal = GetHandNormal();
 	
 	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, CameraRight).Rotator();
 	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
@@ -330,7 +330,7 @@ FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector Came
 	const FRotator HandRotation = FRotationMatrix::MakeFromYZ(HandNormal, FixedYAxis).Rotator();//FRotationMatrix::MakeFromY(HandNormal).Rotator();
 
 	// Debug
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHitLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHandLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
 
 	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
 	return HandRotation;

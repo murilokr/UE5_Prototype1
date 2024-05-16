@@ -33,15 +33,15 @@ struct FHandsContextData
 	FHitResult HitResult;
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-	FVector LocalHitLocation;
+	FVector LocalHandLocation;
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-	FVector LocalHitNormal;
+	FVector LocalHandNormal;
 
 	// Hand Location
-	FVector GetHitLocation();
+	FVector GetHandLocation();
 
-	FVector GetHitNormal();
+	FVector GetHandNormal();
 
 	FRotator GetHandRotation(bool bShouldFlip, const FVector CameraRight);
 
@@ -93,13 +93,12 @@ public:
 	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
 
 	/** Hand Utility Functions */
-	// Hand Location
 	UFUNCTION(BlueprintPure)
-	const FVector GetHitLocation(int HandIndex);
+	const FVector GetHandLocation(int HandIndex);
 
 	// Hand Normal
 	UFUNCTION(BlueprintPure)
-	const FVector GetHitNormal(int HandIndex);
+	const FVector GetHandNormal(int HandIndex);
 
 	// Hand Rotation
 	UFUNCTION(BlueprintPure)
@@ -113,6 +112,10 @@ public:
 	// Prevents overstretching. We let go if grabbed location is beyond this length.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
 	float ArmsLengthUnits = 54.5f; //54.5
+
+	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	float HandSafeZone = 10.0f;
 
 protected:
 	virtual void BeginPlay();
