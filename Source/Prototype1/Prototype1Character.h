@@ -57,9 +57,21 @@ class APrototype1Character : public ACharacter
 
 public:
 
+	/** Collider to use when climbing. RootComponent(CapsuleMesh) is used only when grounded/walking or falling */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UCapsuleComponent* ClimbingCollider;
+
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Mesh, meta = (AllowPrivateAccess = "true"))
 	USkeletalMeshComponent* Mesh1P;
+
+	/** JointTarget for Left Elbow. This is used for IK Animations. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* JointTarget_ElbowL;
+
+	/** JointTarget for Right Elbow. This is used for IK Animations. */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* JointTarget_ElbowR;
 
 	/** First person camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
@@ -77,7 +89,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	class UInputAction* LookAction; // Mouse
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
-	class UInputAction* LookAroundAction; // Alt-key, Arma like movement.
+	class UInputAction* FreeLookAction; // Alt-key, Arma like movement.
 
 	/** Grab Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
@@ -91,6 +103,12 @@ public:
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
 	/** Returns FirstPersonCameraComponent subobject **/
 	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnStartGrab(const FHandsContextData& HandData, int HandIndex);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnEndGrab(const FHandsContextData& HandData, int HandIndex);
 
 	/** Hand Utility Functions */
 	UFUNCTION(BlueprintPure)
@@ -117,6 +135,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
 	float HandSafeZone = 10.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	float FreeLookAngleLimit = 45.0f;
+
 protected:
 	virtual void BeginPlay();
 
@@ -127,10 +148,14 @@ protected:
 	void Look(const FInputActionValue& Value);
 
 	// This is used for when we want to look around while grabbing something.
-	void BeginLookAround(const FInputActionValue& Value);
+	void BeginFreeLook(const FInputActionValue& Value);
 
 	// This is used to end look around while grabbing something.
-	void EndLookAround(const FInputActionValue& Value);
+	void EndFreeLook(const FInputActionValue& Value);
+
+	bool CanUseYaw(const FRotator& Delta, float LookAxisValue);
+
+	bool CanUsePitch(const FRotator& Delta, float LookAxisValue);
 
 	/** Called for grabbing input Right */
 	void GrabR(const FInputActionValue& Value);
@@ -163,6 +188,11 @@ protected:
 	FHandsContextData RightHandData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
-	bool IsLookingAround;
+	bool IsFreeLooking;
+
+private:
+	UPROPERTY()
+	TEnumAsByte<ECollisionEnabled::Type> CapsuleComponentCollisionType;
+
 };
 

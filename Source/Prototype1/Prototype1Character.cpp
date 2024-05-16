@@ -12,6 +12,7 @@
 #include "Engine/LocalPlayer.h"
 #include <Kismet/KismetSystemLibrary.h>
 #include "GameFramework/CharacterMovementComponent.h"
+#include <Kismet/KismetMathLibrary.h>
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -22,22 +23,40 @@ APrototype1Character::APrototype1Character()
 {
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
-		
-	// Create a CameraComponent	
-	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCameraComponent->SetupAttachment(GetCapsuleComponent());
-	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
-	FirstPersonCameraComponent->bUsePawnControlRotation = true;
+	CapsuleComponentCollisionType = GetCapsuleComponent()->GetCollisionEnabled();
+
+	// Create a CapsuleComponent
+	ClimbingCollider = CreateDefaultSubobject<UCapsuleComponent>(TEXT("ClimbingCollider"));
+	ClimbingCollider->SetupAttachment(GetCapsuleComponent());
+	ClimbingCollider->InitCapsuleSize(55.f, 55.f); // Actually a sphere, not a capsule :P
+	ClimbingCollider->SetRelativeLocation(FVector(0.f, 0.f, 41.f));
+	ClimbingCollider->SetCollisionObjectType(ECollisionChannel::ECC_Pawn);
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
 	Mesh1P->SetOnlyOwnerSee(true);
-	Mesh1P->SetupAttachment(FirstPersonCameraComponent);
+	Mesh1P->SetupAttachment(GetCapsuleComponent());
 	Mesh1P->bCastDynamicShadow = false;
 	Mesh1P->CastShadow = false;
 	//Mesh1P->SetRelativeRotation(FRotator(0.9f, -19.19f, 5.2f));
-	Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
+	//Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
+	Mesh1P->SetRelativeLocation(FVector(0.f, 0.f, -121.414395f));
 
+	// Create a CameraComponent
+	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
+	FirstPersonCameraComponent->SetupAttachment(Mesh1P);
+	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
+	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
+	FirstPersonCameraComponent->bUsePawnControlRotation = true;
+
+	JointTarget_ElbowL = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("JointTarget_ElbowL"));
+	JointTarget_ElbowL->SetupAttachment(Mesh1P);
+	JointTarget_ElbowL->SetRelativeLocation(FVector(-300.f, -1000.f, 0.f));
+	JointTarget_ElbowL->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
+	JointTarget_ElbowR = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("JointTarget_ElbowR"));
+	JointTarget_ElbowR->SetupAttachment(Mesh1P);
+	JointTarget_ElbowR->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
+	JointTarget_ElbowR->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
 }
 
 void APrototype1Character::BeginPlay()
@@ -64,8 +83,8 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 
 		// Looking
 		EnhancedInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &APrototype1Character::Look);
-		EnhancedInputComponent->BindAction(LookAroundAction, ETriggerEvent::Started, this, &APrototype1Character::BeginLookAround);
-		EnhancedInputComponent->BindAction(LookAroundAction, ETriggerEvent::Completed, this, &APrototype1Character::EndLookAround);
+		EnhancedInputComponent->BindAction(FreeLookAction, ETriggerEvent::Started, this, &APrototype1Character::BeginFreeLook);
+		EnhancedInputComponent->BindAction(FreeLookAction, ETriggerEvent::Completed, this, &APrototype1Character::EndFreeLook);
 
 		// Grabbing
 		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Started, this, &APrototype1Character::GrabL);
@@ -92,14 +111,16 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 	}
 }
 
-void APrototype1Character::BeginLookAround(const FInputActionValue& Value)
+void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 {
-	IsLookingAround = true;
+	IsFreeLooking = true;
+	bUseControllerRotationYaw = false;
 }
 
-void APrototype1Character::EndLookAround(const FInputActionValue& Value)
+void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 {
-	IsLookingAround = false;
+	IsFreeLooking = false;
+	bUseControllerRotationYaw = true;
 }
 
 void APrototype1Character::Look(const FInputActionValue& Value)
@@ -109,7 +130,7 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 
 	// If we are grabbing something, send mouse input to hands instead.
 	// But if we are looking around, ignore sending data to hands.
-	if (IsGrabbing() && !IsLookingAround)
+	if (IsGrabbing() && !IsFreeLooking)
 	{
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
@@ -118,9 +139,17 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 
 	if (Controller != nullptr)
 	{
+		FRotator Delta = UKismetMathLibrary::NormalizedDeltaRotator(GetActorRotation(), GetControlRotation());
+
 		// add yaw and pitch input to controller
-		AddControllerYawInput(LookAxisVector.X);
-		AddControllerPitchInput(LookAxisVector.Y);
+		if (CanUseYaw(Delta, LookAxisVector.X))
+		{
+			AddControllerYawInput(LookAxisVector.X);
+		}
+		if (CanUsePitch(Delta, LookAxisVector.Y))
+		{
+			AddControllerPitchInput(LookAxisVector.Y);
+		}
 	}
 }
 
@@ -133,7 +162,6 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
-	//const FRotator GrabRot = HandNormal.ToOrientationRotator();
 	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, FirstPersonCameraComponent->GetRightVector()).Rotator();
 
 	const FVector MouseMove = FVector(0, LookAxisVector.X, LookAxisVector.Y);
@@ -215,7 +243,7 @@ void APrototype1Character::Grab(int HandIndex)
 	// Calculate GrabPositionT
 	HandData.GrabPositionT = 0.0f;
 	const FVector PositionDir = HitResult.Location - TraceStart;
-	if (TraceDir.Dot(PositionDir) >= 0.0f)
+	if ((TraceDir | PositionDir) >= 0.0f)
 	{
 		// HitResult.Location is inline with TraceDir.
 		HandData.GrabPositionT = FMath::Clamp(PositionDir.SquaredLength() / TraceLength, 0.0f, 1.0f);
@@ -225,9 +253,16 @@ void APrototype1Character::Grab(int HandIndex)
 	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
 	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
 
-	// Need to enable this later.
-	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
-	//OnStartGrabbing();
+	// Disable Root CapsuleComponent collision and enable ClimbingCollider if other hand is not grabbing.
+	FHandsContextData OtherHand = (HandIndex == 0) ? LeftHandData : RightHandData;
+	if (!OtherHand.IsGrabbing)
+	{
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		ClimbingCollider->SetCollisionEnabled(CapsuleComponentCollisionType);
+	}
+
+
+	OnStartGrab(HandData, HandIndex);
 }
 
 void APrototype1Character::StopGrabbing(int HandIndex)
@@ -241,6 +276,16 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	}
 
 	HandData.IsGrabbing = false;
+
+	// Re-enable Root CapsuleComponent collision and disable ClimbingCollider if other hand is not grabbing.
+	FHandsContextData OtherHand = (HandIndex == 0) ? LeftHandData : RightHandData;
+	if (!OtherHand.IsGrabbing)
+	{
+		GetCapsuleComponent()->SetCollisionEnabled(CapsuleComponentCollisionType);
+		ClimbingCollider->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	OnStartGrab(HandData, HandIndex);
 }
 
 const FVector APrototype1Character::GetHandLocation(int HandIndex)
@@ -268,6 +313,40 @@ const FRotator APrototype1Character::GetHandRotation(int HandIndex)
 const bool APrototype1Character::IsGrabbing()
 {
 	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;
+}
+
+bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue)
+{
+	if (IsFreeLooking)
+	{
+		if (Delta.Yaw > FreeLookAngleLimit && LookAxisValue < 0.0f)
+		{
+			return false;
+		}
+		if (Delta.Yaw < -FreeLookAngleLimit && LookAxisValue > 0.0f)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool APrototype1Character::CanUsePitch(const FRotator& Delta, float LookAxisValue)
+{
+	if (IsFreeLooking)
+	{
+		if (Delta.Pitch > FreeLookAngleLimit && LookAxisValue > 0.0f)
+		{
+			return false;
+		}
+		if (Delta.Pitch < -FreeLookAngleLimit && LookAxisValue < 0.0f)
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 void APrototype1Character::GrabR(const FInputActionValue& Value)
