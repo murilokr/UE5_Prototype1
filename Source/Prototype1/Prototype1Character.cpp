@@ -114,11 +114,18 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 {
 	IsFreeLooking = true;
+	FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
 }
 
 void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 {
+	// Reset camera to ControlRotation.
+	if (AController* MyController = GetController())
+	{
+		MyController->SetControlRotation(FreeLookControlRotation);
+	}
+
 	IsFreeLooking = false;
 	bUseControllerRotationYaw = true;
 }
@@ -162,7 +169,7 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
-	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, FirstPersonCameraComponent->GetRightVector()).Rotator();
+	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, GetActorRotation().RotateVector(FVector::YAxisVector)).Rotator(); //FirstPersonCameraComponent->GetRightVector()
 
 	const FVector MouseMove = FVector(0, LookAxisVector.X, LookAxisVector.Y);
 	const FVector GrabTargetPosition = HandLocation + GrabRot.RotateVector(MouseMove);
@@ -307,7 +314,7 @@ const FRotator APrototype1Character::GetHandRotation(int HandIndex)
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
 	// Flip RightHand only.
-	return HandData.GetHandRotation(HandIndex == 0, FirstPersonCameraComponent->GetRightVector());
+	return HandData.GetHandRotation(HandIndex == 0, GetActorRotation().RotateVector(FVector::YAxisVector)); //FirstPersonCameraComponent->GetRightVector()
 }
 
 const bool APrototype1Character::IsGrabbing()
@@ -393,11 +400,11 @@ FVector FHandsContextData::GetHandNormal()
 	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHandNormal);
 }
 
-FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector CameraRight)
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector ActorRight)
 {
 	FVector HandNormal = GetHandNormal();
 	
-	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, CameraRight).Rotator();
+	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, ActorRight).Rotator();
 	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
 
 	// Invert the normal.

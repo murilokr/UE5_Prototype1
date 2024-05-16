@@ -43,7 +43,7 @@ struct FHandsContextData
 
 	FVector GetHandNormal();
 
-	FRotator GetHandRotation(bool bShouldFlip, const FVector CameraRight);
+	FRotator GetHandRotation(bool bShouldFlip, const FVector ActorRight);
 
 	// Grab Target Position.
 	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir);
@@ -136,7 +136,7 @@ public:
 	float HandSafeZone = 10.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
-	float FreeLookAngleLimit = 45.0f;
+	float FreeLookAngleLimit = 35.0f;
 
 protected:
 	virtual void BeginPlay();
@@ -194,5 +194,7 @@ private:
 	UPROPERTY()
 	TEnumAsByte<ECollisionEnabled::Type> CapsuleComponentCollisionType;
 
+	UPROPERTY()
+	FRotator FreeLookControlRotation;
 };
 
