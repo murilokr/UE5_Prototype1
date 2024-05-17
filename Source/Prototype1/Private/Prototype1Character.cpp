@@ -173,16 +173,16 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const FVector HandNormal = HandData.GetHandNormal();
 	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, GetActorRotation().RotateVector(FVector::YAxisVector)).Rotator();
 
-	// MouseMove is negated, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
-	const FVector MouseMove = FVector(0, -LookAxisVector.X, -LookAxisVector.Y);
-	const FVector MoveDir = GrabRot.RotateVector(MouseMove);
+	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
+	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
+	const FVector MoveDir = -MouseInput;
 	// We need to save MoveDir, as this is the actual ammount of movement that we'll want to apply, but we do that in our custom CMC.
 
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
 	bool ArmOverstretched;
 	const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched);
-	FVector ProjectedArmVector = FVector::VectorPlaneProject(-ArmVector, HandNormal);//.GetSafeNormal() * 10.0f;
-	const bool MouseMovingTowardsHand = (-MoveDir | ProjectedArmVector) > 0.f; 
+	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);//.GetSafeNormal() * 10.0f;
+	const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
 		//GetMovementComponent()->AddInputVector(MoveDir); // This affects Acceleration.
@@ -190,12 +190,12 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	}
 
 	// Debugs
-	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseMove.ToString()));
+	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
 	GEngine->AddOnScreenDebugMessage(2, 2.5f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmVector.Length()));
 	if (MouseMovingTowardsHand)
 	{
-		GEngine->AddOnScreenDebugMessage(3, 2.5f, FColor::Emerald, TEXT("Mouse moving towards Hand!!"));
+		GEngine->AddOnScreenDebugMessage(3, 0.16f, FColor::Emerald, TEXT("Mouse moving towards Hand!!"));
 	}
 
 	/** GrabRot relative to HandLocation */
@@ -208,7 +208,9 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
 
 	/** Arrow pointing from HandLocation to MoveDir */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - MoveDir, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
+
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
@@ -330,7 +332,7 @@ FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOff
 
 FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const
 {
-	FVector OutArmVector = GetSafeHandLocation(HandData) - (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset);
+	FVector OutArmVector = (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset) - GetSafeHandLocation(HandData);
 	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits);
 
 	// If Arm is Overstretched, then we'll want to cut the ArmVector to point from shoulder to the safe hand location.
