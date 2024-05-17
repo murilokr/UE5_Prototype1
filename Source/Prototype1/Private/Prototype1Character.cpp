@@ -180,10 +180,9 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
 	bool ArmOverstretched;
-	FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched);
-	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);//.GetSafeNormal() * 10.0f; //Project ArmVector onto the plane of the HandGrab
-	// NEED TO FIX PROJECTED ARM VECTOR!
-	const bool MouseMovingTowardsHand = (MoveDir | ProjectedArmVector) > 0.f; 
+	const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched);
+	FVector ProjectedArmVector = FVector::VectorPlaneProject(-ArmVector, HandNormal);//.GetSafeNormal() * 10.0f;
+	const bool MouseMovingTowardsHand = (-MoveDir | ProjectedArmVector) > 0.f; 
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
 		//GetMovementComponent()->AddInputVector(MoveDir); // This affects Acceleration.
@@ -200,7 +199,7 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	}
 
 	/** GrabRot relative to HandLocation */
-	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
 
 	/** HandLocation */
 	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
