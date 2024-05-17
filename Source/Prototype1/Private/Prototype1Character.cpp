@@ -114,17 +114,17 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 {
 	IsFreeLooking = true;
-	FreeLookControlRotation = GetControlRotation();
+	//FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
 }
 
 void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 {
 	// Reset camera to ControlRotation.
-	if (AController* MyController = GetController())
+	/*if (AController* MyController = GetController())
 	{
 		MyController->SetControlRotation(FreeLookControlRotation);
-	}
+	}*/
 
 	IsFreeLooking = false;
 	bUseControllerRotationYaw = true;
@@ -169,14 +169,32 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
-	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, GetActorRotation().RotateVector(FVector::YAxisVector)).Rotator(); //FirstPersonCameraComponent->GetRightVector()
+	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, GetActorRotation().RotateVector(FVector::YAxisVector)).Rotator();
 
-	const FVector MouseMove = FVector(0, LookAxisVector.X, LookAxisVector.Y);
-	const FVector GrabTargetPosition = HandLocation + GrabRot.RotateVector(MouseMove);
-	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseMove.ToString()));
-	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Green, FString::Printf(TEXT("%s"), *GrabTargetPosition.ToString()));
+	// MouseMove is negated, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
+	const FVector MouseMove = FVector(0, -LookAxisVector.X, -LookAxisVector.Y);
+	const FVector MoveDir = GrabRot.RotateVector(MouseMove);
+	// We need to save MoveDir, as this is the actual ammount of movement that we'll want to apply, but we do that in our custom CMC.
+
+	// This effectively only moves the Hand visual.
+	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
+
+	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
+	const FVector ArmOrbit = (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + MoveDir) - HandLocation; // Perhaps get SafeHandLocation()?
+	const FVector HandGrabDiff = Mesh1P->GetBoneLocation(HandData.HandBoneName) - HandLocation;
+	bool IsArmOverstretched = ArmOrbit.SquaredLength() >= FMath::Square(ArmsLengthUnits) && HandGrabDiff.SquaredLength() > 1.5f; // If Hand actual location and desired location is greater than 1.5 Unreal Units.
+	if (!IsArmOverstretched)
+	{
+		//GetMovementComponent()->AddInputVector(MoveDir); // Acceleration.
+		GetMovementComponent()->Velocity += MoveDir; // Velocity
+		//SetActorLocation(GetActorLocation() + MoveDir);
+	}
 
 	// Debugs
+	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseMove.ToString()));
+	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
+	GEngine->AddOnScreenDebugMessage(2, 2.5f, (IsArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmOrbit.Length()));
+
 	/** GrabRot relative to HandLocation */
 	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
 
@@ -186,17 +204,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	/** HandNormal pointing outwards from HandLocation */
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
 
-	/** Arrow pointing from HandLocation to GrabTargetPosition */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, GrabTargetPosition, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	/** Arrow pointing from HandLocation to MoveDir */
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - MoveDir, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmOrbit, 1.0f, (IsArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 	// End of Debugs
-
-	// This effectively only moves the Hand visual.
-	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
-
-	const FVector DragOffset = HandLocation - GrabTargetPosition;
-	//GetMovementComponent()->AddInputVector(DragOffset); // Acceleration.
-	GetMovementComponent()->Velocity += DragOffset; // Velocity
-	//SetActorLocation(GetActorLocation() + DragOffset);
 
 
 	// TODO Optimize
@@ -314,7 +326,7 @@ const FRotator APrototype1Character::GetHandRotation(int HandIndex)
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
 	// Flip RightHand only.
-	return HandData.GetHandRotation(HandIndex == 0, GetActorRotation().RotateVector(FVector::YAxisVector)); //FirstPersonCameraComponent->GetRightVector()
+	return HandData.GetHandRotation(HandIndex == 0, GetActorRotation().RotateVector(FVector::YAxisVector));
 }
 
 const bool APrototype1Character::IsGrabbing()

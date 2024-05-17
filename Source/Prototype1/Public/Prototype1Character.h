@@ -25,6 +25,12 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	bool IsGrabbing;
 
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	FName HandBoneName = "hand_r";
+
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	FName ShoulderBoneName = "upperarm_r";
+
 	// Maybe we'll remove this.
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	float GrabPositionT;
@@ -127,9 +133,15 @@ public:
 	const bool IsGrabbing();
 	/** End of Hand Utility Functions */
 
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = PhysicalArms)
+	FHandsContextData LeftHandData;
+
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = PhysicalArms)
+	FHandsContextData RightHandData;
+
 	// Prevents overstretching. We let go if grabbed location is beyond this length.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
-	float ArmsLengthUnits = 54.5f; //54.5
+	float ArmsLengthUnits = 54.5f;
 
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
@@ -180,12 +192,6 @@ protected:
 	// APawn interface
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	// End of APawn interface
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	FHandsContextData LeftHandData;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly)
-	FHandsContextData RightHandData;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool IsFreeLooking;
