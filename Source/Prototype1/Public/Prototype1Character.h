@@ -26,9 +26,6 @@ struct FHandsContextData
 	bool IsGrabbing;
 
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
-	FName HandBoneName = "hand_r";
-
-	UPROPERTY(BlueprintReadOnly, EditAnywhere)
 	FName ShoulderBoneName = "upperarm_r";
 
 	// Maybe we'll remove this.
@@ -45,14 +42,14 @@ struct FHandsContextData
 	FVector LocalHandNormal;
 
 	// Hand Location
-	FVector GetHandLocation();
+	FVector GetHandLocation() const;
 
-	FVector GetHandNormal();
+	FVector GetHandNormal() const;
 
-	FRotator GetHandRotation(bool bShouldFlip, const FVector ActorRight);
+	FRotator GetHandRotation(bool bShouldFlip, const FVector ActorRight) const;
 
 	// Grab Target Position.
-	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir);
+	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const;
 };
 
 
@@ -117,20 +114,32 @@ public:
 	void OnEndGrab(const FHandsContextData& HandData, int HandIndex);
 
 	/** Hand Utility Functions */
+	FHandsContextData& GetMutableHandData(int HandIndex);
+	const FHandsContextData& GetHandData(int HandIndex) const;
+
 	UFUNCTION(BlueprintPure)
-	const FVector GetHandLocation(int HandIndex);
+	FVector GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched) const;
+	FVector GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const;
+
+	UFUNCTION(BlueprintPure)
+	FVector GetHandLocation(int HandIndex) const;
+	FVector GetHandLocation(const FHandsContextData& HandData) const;
+
+	UFUNCTION(BlueprintPure)
+	FVector GetSafeHandLocation(int HandIndex) const;
+	FVector GetSafeHandLocation(const FHandsContextData& HandData) const;
 
 	// Hand Normal
 	UFUNCTION(BlueprintPure)
-	const FVector GetHandNormal(int HandIndex);
+	FVector GetHandNormal(int HandIndex) const;
 
 	// Hand Rotation
 	UFUNCTION(BlueprintPure)
-	const FRotator GetHandRotation(int HandIndex);
+	FRotator GetHandRotation(int HandIndex) const;
 
 	// IsGrabbing
 	UFUNCTION(BlueprintPure)
-	const bool IsGrabbing();
+	bool IsGrabbing() const;
 	/** End of Hand Utility Functions */
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = PhysicalArms)
@@ -165,9 +174,9 @@ protected:
 	// This is used to end look around while grabbing something.
 	void EndFreeLook(const FInputActionValue& Value);
 
-	bool CanUseYaw(const FRotator& Delta, float LookAxisValue);
+	bool CanUseYaw(const FRotator& Delta, float LookAxisValue) const;
 
-	bool CanUsePitch(const FRotator& Delta, float LookAxisValue);
+	bool CanUsePitch(const FRotator& Delta, float LookAxisValue) const;
 
 	/** Called for grabbing input Right */
 	void GrabR(const FInputActionValue& Value);

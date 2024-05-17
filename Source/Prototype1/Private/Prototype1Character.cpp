@@ -139,6 +139,8 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	// But if we are looking around, ignore sending data to hands.
 	if (IsGrabbing() && !IsFreeLooking)
 	{
+		// TODO: Add passes to this on our custom CMC, to gather hand data and apply movement if needed. These 2 functions below should just update the 
+		// hand move delta.
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
 		return;
@@ -176,27 +178,29 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const FVector MoveDir = GrabRot.RotateVector(MouseMove);
 	// We need to save MoveDir, as this is the actual ammount of movement that we'll want to apply, but we do that in our custom CMC.
 
-	// This effectively only moves the Hand visual.
-	//LHCollision.SetRelativeLocation(HandData.LocalHitLocation);
-
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
-	const FVector ArmOrbit = (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + MoveDir) - HandLocation; // Perhaps get SafeHandLocation()?
-	const FVector HandGrabDiff = Mesh1P->GetBoneLocation(HandData.HandBoneName) - HandLocation;
-	bool IsArmOverstretched = ArmOrbit.SquaredLength() >= FMath::Square(ArmsLengthUnits) && HandGrabDiff.SquaredLength() > 1.5f; // If Hand actual location and desired location is greater than 1.5 Unreal Units.
-	if (!IsArmOverstretched)
+	bool ArmOverstretched;
+	FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched);
+	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);//.GetSafeNormal() * 10.0f; //Project ArmVector onto the plane of the HandGrab
+	// NEED TO FIX PROJECTED ARM VECTOR!
+	const bool MouseMovingTowardsHand = (MoveDir | ProjectedArmVector) > 0.f; 
+	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
-		//GetMovementComponent()->AddInputVector(MoveDir); // Acceleration.
-		GetMovementComponent()->Velocity += MoveDir; // Velocity
-		//SetActorLocation(GetActorLocation() + MoveDir);
+		//GetMovementComponent()->AddInputVector(MoveDir); // This affects Acceleration.
+		GetMovementComponent()->Velocity += MoveDir; // This affects Velocity.
 	}
 
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseMove.ToString()));
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
-	GEngine->AddOnScreenDebugMessage(2, 2.5f, (IsArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmOrbit.Length()));
+	GEngine->AddOnScreenDebugMessage(2, 2.5f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmVector.Length()));
+	if (MouseMovingTowardsHand)
+	{
+		GEngine->AddOnScreenDebugMessage(3, 2.5f, FColor::Emerald, TEXT("Mouse moving towards Hand!!"));
+	}
 
 	/** GrabRot relative to HandLocation */
-	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
+	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
 
 	/** HandLocation */
 	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
@@ -206,12 +210,13 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	/** Arrow pointing from HandLocation to MoveDir */
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - MoveDir, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmOrbit, 1.0f, (IsArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
 	// End of Debugs
 
 
-	// TODO Optimize
+	// TODO: This might get used to add "Fake" anchor objects. (Objects that will fall once you grab them, to add risks)
 	/*const float MinSearchDist = 0.2125 * 100.0f;
 	const float MaxSearchDist = 2.0f * 100.0f;
 	const FVector TraceStart = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MinSearchDist);
@@ -307,21 +312,67 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	OnStartGrab(HandData, HandIndex);
 }
 
-const FVector APrototype1Character::GetHandLocation(int HandIndex)
+FHandsContextData& APrototype1Character::GetMutableHandData(int HandIndex)
+{
+	FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
+	return HandData;
+}
+
+const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
+{
+	const FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
+	return HandData;
+}
+
+FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched) const
+{
+	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched);
+}
+
+FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const
+{
+	FVector OutArmVector = GetSafeHandLocation(HandData) - (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset);
+	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits);
+
+	// If Arm is Overstretched, then we'll want to cut the ArmVector to point from shoulder to the safe hand location.
+	if (OutIsOverstretched)
+	{
+		//OutArmVector = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset + OutArmVector.GetSafeNormal() * ArmsLengthUnits;
+	}
+
+	return OutArmVector;
+}
+
+FVector APrototype1Character::GetHandLocation(int HandIndex) const
+{
+	return GetHandLocation(GetHandData(HandIndex));
+}
+
+FVector APrototype1Character::GetHandLocation(const FHandsContextData& HandData) const
+{
+	return HandData.GetHandLocation();
+}
+
+FVector APrototype1Character::GetSafeHandLocation(int HandIndex) const
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
+	return GetSafeHandLocation(HandData);
+}
+
+FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandData) const
+{
 	return HandData.GetHandLocation() + HandData.GetHandNormal() * HandSafeZone;
 }
 
-const FVector APrototype1Character::GetHandNormal(int HandIndex)
+FVector APrototype1Character::GetHandNormal(int HandIndex) const
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
 	return HandData.GetHandNormal();
 }
 
-const FRotator APrototype1Character::GetHandRotation(int HandIndex)
+FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
@@ -329,12 +380,12 @@ const FRotator APrototype1Character::GetHandRotation(int HandIndex)
 	return HandData.GetHandRotation(HandIndex == 0, GetActorRotation().RotateVector(FVector::YAxisVector));
 }
 
-const bool APrototype1Character::IsGrabbing()
+bool APrototype1Character::IsGrabbing() const
 {
 	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;
 }
 
-bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue)
+bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue) const
 {
 	if (IsFreeLooking)
 	{
@@ -351,7 +402,7 @@ bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue)
 	return true;
 }
 
-bool APrototype1Character::CanUsePitch(const FRotator& Delta, float LookAxisValue)
+bool APrototype1Character::CanUsePitch(const FRotator& Delta, float LookAxisValue) const
 {
 	if (IsFreeLooking)
 	{
@@ -388,7 +439,7 @@ void APrototype1Character::StopGrabL(const FInputActionValue& Value)
 	StopGrabbing(1);
 }
 
-FVector FHandsContextData::GetHandLocation()
+FVector FHandsContextData::GetHandLocation() const
 {
 	if (!HitResult.Component.IsValid())
 	{
@@ -400,7 +451,7 @@ FVector FHandsContextData::GetHandLocation()
 	return HitBoneLocalToWorldTransform.TransformPosition(LocalHandLocation);
 }
 
-FVector FHandsContextData::GetHandNormal()
+FVector FHandsContextData::GetHandNormal() const
 {
 	if (!HitResult.Component.IsValid())
 	{
@@ -412,7 +463,7 @@ FVector FHandsContextData::GetHandNormal()
 	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHandNormal);
 }
 
-FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector ActorRight)
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector ActorRight) const
 {
 	FVector HandNormal = GetHandNormal();
 	
@@ -434,7 +485,7 @@ FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector Acto
 	return HandRotation;
 }
 
-FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVector TraceDir)
+FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const
 {
 	return TraceStart + TraceDir * GrabPositionT;
 }
