@@ -11,7 +11,6 @@
 #include "InputActionValue.h"
 #include "Engine/LocalPlayer.h"
 #include <Kismet/KismetSystemLibrary.h>
-#include "GameFramework/CharacterMovementComponent.h"
 #include <Kismet/KismetMathLibrary.h>
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
@@ -19,11 +18,13 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 //////////////////////////////////////////////////////////////////////////
 // APrototype1Character
 
-APrototype1Character::APrototype1Character()
+APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer.SetDefaultSubobjectClass<UClimberCharacterMovementComponent>(ACharacter::CharacterMovementComponentName))
 {
+	ClimberMovementComponent = Cast<UClimberCharacterMovementComponent>(GetCharacterMovement());
+
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
-	CapsuleComponentCollisionType = GetCapsuleComponent()->GetCollisionEnabled();
 
 	// Create a CapsuleComponent
 	ClimbingCollider = CreateDefaultSubobject<UCapsuleComponent>(TEXT("ClimbingCollider"));
@@ -64,7 +65,13 @@ void APrototype1Character::BeginPlay()
 	// Call the base class  
 	Super::BeginPlay();
 
-	GetCharacterMovement()->SetMovementMode(EMovementMode::MOVE_Custom, 0);
+	// Since we start on the ground, default movement mode will be Walking.
+	ClimberMovementComponent->SetMovementMode(EMovementMode::MOVE_Walking);
+
+	// Get Shoulder-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
+	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(FName("clavicle_r"));
+	const FVector ShoulderBoneLocation = Mesh1P->GetBoneLocation(FName("upperarm_r"));
+	ClavicleShoulderLength = (ShoulderBoneLocation - ClavicleBoneLocation).Length() * ClavicleShoulderLengthMultiplier;
 }
 
 //////////////////////////////////////////////////////////////////////////// Input
@@ -185,8 +192,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
-		//GetMovementComponent()->AddInputVector(MoveDir); // This affects Acceleration.
-		GetMovementComponent()->Velocity += MoveDir; // This affects Velocity.
+		//ClimberMovementComponent->AddInputVector(MoveDir); // This affects Acceleration.
+		ClimberMovementComponent->Velocity += MoveDir; // This affects Velocity.
+		
+		//TODO: We may want to INCREMENT here for each hand.
+		//ClimberMovementComponent->HandMoveDir = MoveDir;
 	}
 
 	// Debugs
@@ -240,10 +250,10 @@ void APrototype1Character::Grab(int HandIndex)
 		return;
 	}
 
-	const float MinSearchDist = 0.2125 * 100.0f;
-	const float MaxSearchDist = 2.0f * 100.0f;
-	const FVector TraceStart = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MinSearchDist);
-	const FVector TraceEnd = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MaxSearchDist);
+	const FName ClavicleBone = (HandIndex == 0) ? FName("clavicle_r") : FName("clavicle_l");
+	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(ClavicleBone);
+	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
+	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * (ArmsLengthUnits + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
 	const float TraceLength = TraceDir.SquaredLength();
 
@@ -254,7 +264,7 @@ void APrototype1Character::Grab(int HandIndex)
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
-	//DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
+	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
 
 	// Nothing was hit.
 	if (!HitResult.bBlockingHit)
@@ -278,15 +288,6 @@ void APrototype1Character::Grab(int HandIndex)
 	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
 	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
 
-	// Disable Root CapsuleComponent collision and enable ClimbingCollider if other hand is not grabbing.
-	FHandsContextData OtherHand = (HandIndex == 0) ? LeftHandData : RightHandData;
-	if (!OtherHand.IsGrabbing)
-	{
-		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		ClimbingCollider->SetCollisionEnabled(CapsuleComponentCollisionType);
-	}
-
-
 	OnStartGrab(HandData, HandIndex);
 }
 
@@ -301,14 +302,6 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	}
 
 	HandData.IsGrabbing = false;
-
-	// Re-enable Root CapsuleComponent collision and disable ClimbingCollider if other hand is not grabbing.
-	FHandsContextData OtherHand = (HandIndex == 0) ? LeftHandData : RightHandData;
-	if (!OtherHand.IsGrabbing)
-	{
-		GetCapsuleComponent()->SetCollisionEnabled(CapsuleComponentCollisionType);
-		ClimbingCollider->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-	}
 
 	OnStartGrab(HandData, HandIndex);
 }
@@ -332,12 +325,16 @@ FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOff
 
 FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const
 {
-	FVector OutArmVector = (Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset) - GetSafeHandLocation(HandData);
+	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
+	FVector OutArmVector = ShoulderOffset - GetSafeHandLocation(HandData);
 	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits);
 
 	// If Arm is Overstretched, then we'll want to cut the ArmVector to point from shoulder to the safe hand location.
 	if (OutIsOverstretched)
 	{
+		const FVector FixedArmVector = GetSafeHandLocation(HandData) + OutArmVector.GetSafeNormal() * ArmsLengthUnits;
+		const FVector FixDelta = FixedArmVector - OutArmVector;
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + FixDelta, 1.5f, FColor::Green, false, 5.0f, 0, 2.0f);
 		//OutArmVector = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset + OutArmVector.GetSafeNormal() * ArmsLengthUnits;
 	}
 

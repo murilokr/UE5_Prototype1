@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
+
+#include "ClimberCharacterMovementComponent.h"
+
 #include "Prototype1Character.generated.h"
 
 class UInputComponent;
@@ -59,6 +62,14 @@ class APrototype1Character : public ACharacter
 	GENERATED_BODY()
 
 public:
+	UFUNCTION(BlueprintPure)
+	FORCEINLINE UClimberCharacterMovementComponent* GetCustomCharacterMovement() const { return ClimberMovementComponent; }
+
+protected:
+	UPROPERTY(Category = Character, VisibleAnywhere, BlueprintReadOnly)
+	UClimberCharacterMovementComponent* ClimberMovementComponent;
+
+public:
 
 	/** Collider to use when climbing. RootComponent(CapsuleMesh) is used only when grounded/walking or falling */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
@@ -100,7 +111,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* GrabActionR;
 	
-	APrototype1Character();
+	APrototype1Character(const FObjectInitializer& ObjectInitializer);
 
 	/** Returns Mesh1P subobject **/
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
@@ -156,6 +167,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
 	float HandSafeZone = 10.0f;
 
+	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	float ClavicleShoulderLengthMultiplier = 0.5f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
 	float FreeLookAngleLimit = 35.0f;
 
@@ -206,10 +221,10 @@ protected:
 	bool IsFreeLooking;
 
 private:
-	UPROPERTY()
-	TEnumAsByte<ECollisionEnabled::Type> CapsuleComponentCollisionType;
 
 	UPROPERTY()
 	FRotator FreeLookControlRotation;
+
+	float ClavicleShoulderLength;
 };
 
