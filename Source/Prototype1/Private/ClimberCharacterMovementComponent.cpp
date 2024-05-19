@@ -80,7 +80,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(CharacterOwner))
 	{
 		bool IsArmOutstretched;
-		ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, Delta, IsArmOutstretched);
+		FVector RootDeltaFix;
+		ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, Delta, IsArmOutstretched, RootDeltaFix);
 	}
 
 	// The actual movement.

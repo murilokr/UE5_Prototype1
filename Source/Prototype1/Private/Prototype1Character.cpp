@@ -190,8 +190,9 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
 	bool ArmOverstretched;
-	const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched);
-	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);//.GetSafeNormal() * 10.0f;
+	FVector RootDeltaFix;
+	const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched, RootDeltaFix);
+	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);
 	const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
@@ -201,6 +202,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 		//TODO: We may want to INCREMENT here for each hand.
 		//ClimberMovementComponent->HandMoveDir = MoveDir;
 	}
+
+
+	// This is placeholder until CMC is fixed.
+	// Snapping Root back to a acceptable shoulder distance from the hand.
+	ClimberMovementComponent->Velocity += RootDeltaFix;
 
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
@@ -315,27 +321,39 @@ const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
 	return HandData;
 }
 
-FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched) const
+FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const
 {
-	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched);
+	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched, RootDeltaFix);
 }
 
-FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const
+FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const
 {
+	RootDeltaFix = FVector::ZeroVector;
+
 	const FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
 
 	FVector OutArmVector = ShoulderOffset - HandLocation;
 	OutIsOverstretched = OutArmVector.SquaredLength() >= ArmsLengthUnitsSquared;
 
-	// If Arm is Overstretched, then we'll want to cut the ArmVector to point from shoulder to the safe hand location.
+	// If Arm is Overstretched, then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (OutIsOverstretched)
 	{
+		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
+		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.5f, FColor::Green, false, 0.0f, 0, 2.0f);
+
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits;
 		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.5f, FColor::Green, false, 0.0f, 0, 2.0f);
 
-		const FVector ArmDelta = HandLocation + FixedArmVector - ShoulderOffset; //Might want to make it relative to the UpdatedComponent tho.
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDelta, 1.5f, FColor::Purple, false, 0.0f, 0, 2.0f);
+		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
+		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.5f, FColor::Purple, false, 0.0f, 0, 2.0f);
+
+		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector.
+		// TODO: Take into acount "2D" movement. Don't have it go forward, we'll try to keep a constant distance from the wall.
+		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
+		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.5f, FColor::Blue, false, 0.0f, 0, 2.0f);
 	}
 
 	return OutArmVector;

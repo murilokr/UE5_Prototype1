@@ -129,8 +129,8 @@ public:
 	const FHandsContextData& GetHandData(int HandIndex) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched) const;
-	FVector GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const;
+	FVector GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const;
+	FVector GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const;
 
 	UFUNCTION(BlueprintPure)
 	FVector GetHandLocation(int HandIndex) const;
