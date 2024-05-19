@@ -68,6 +68,9 @@ void APrototype1Character::BeginPlay()
 	// Since we start on the ground, default movement mode will be Walking.
 	ClimberMovementComponent->SetMovementMode(EMovementMode::MOVE_Walking);
 
+	/** Caching some "heavy" calculations that will be used everyframe */
+	ArmsLengthUnitsSquared = FMath::Square(ArmsLengthUnits);
+
 	// Get Shoulder-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(FName("clavicle_r"));
 	const FVector ShoulderBoneLocation = Mesh1P->GetBoneLocation(FName("upperarm_r"));
@@ -209,31 +212,25 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	}
 
 	/** GrabRot relative to HandLocation */
-	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
+	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
 
 	/** HandLocation */
-	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
+	//DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
 
 	/** HandNormal pointing outwards from HandLocation */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
 
 	/** Arrow pointing from HandLocation to MoveDir */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
 	// End of Debugs
 
 
 	// TODO: This might get used to add "Fake" anchor objects. (Objects that will fall once you grab them, to add risks)
-	/*const float MinSearchDist = 0.2125 * 100.0f;
-	const float MaxSearchDist = 2.0f * 100.0f;
-	const FVector TraceStart = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MinSearchDist);
-	const FVector TraceEnd = FirstPersonCameraComponent->GetComponentLocation() + FirstPersonCameraComponent->GetForwardVector() * FVector(MaxSearchDist);
-	const FVector TraceDir = TraceEnd - TraceStart;*/
-	// End of TODO Optimize
 	//const FVector GrabTargetPosition = HandData.GetGrabPosition(TraceStart, TraceDir);
 
 	// When we want to GRAB and MOVE an object. do this. Also consider adding a PhysicsHandle instead, if the object is grabbable.
@@ -264,7 +261,7 @@ void APrototype1Character::Grab(int HandIndex)
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
-	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
+	//DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
 
 	// Nothing was hit.
 	if (!HitResult.bBlockingHit)
@@ -325,17 +322,20 @@ FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOff
 
 FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched) const
 {
+	const FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
-	FVector OutArmVector = ShoulderOffset - GetSafeHandLocation(HandData);
-	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits);
+
+	FVector OutArmVector = ShoulderOffset - HandLocation;
+	OutIsOverstretched = OutArmVector.SquaredLength() >= ArmsLengthUnitsSquared;
 
 	// If Arm is Overstretched, then we'll want to cut the ArmVector to point from shoulder to the safe hand location.
 	if (OutIsOverstretched)
 	{
-		const FVector FixedArmVector = GetSafeHandLocation(HandData) + OutArmVector.GetSafeNormal() * ArmsLengthUnits;
-		const FVector FixDelta = FixedArmVector - OutArmVector;
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + FixDelta, 1.5f, FColor::Green, false, 5.0f, 0, 2.0f);
-		//OutArmVector = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset + OutArmVector.GetSafeNormal() * ArmsLengthUnits;
+		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits;
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.5f, FColor::Green, false, 0.0f, 0, 2.0f);
+
+		const FVector ArmDelta = HandLocation + FixedArmVector - ShoulderOffset; //Might want to make it relative to the UpdatedComponent tho.
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDelta, 1.5f, FColor::Purple, false, 0.0f, 0, 2.0f);
 	}
 
 	return OutArmVector;

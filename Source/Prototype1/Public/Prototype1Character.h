@@ -225,6 +225,8 @@ private:
 	UPROPERTY()
 	FRotator FreeLookControlRotation;
 
+	// Cached "heavy" calculations for perf.
+	float ArmsLengthUnitsSquared;
 	float ClavicleShoulderLength;
 };
 
