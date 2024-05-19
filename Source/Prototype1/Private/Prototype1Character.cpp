@@ -350,9 +350,10 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
 		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.5f, FColor::Purple, false, 0.0f, 0, 2.0f);
 
-		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector.
-		// TODO: Take into acount "2D" movement. Don't have it go forward, we'll try to keep a constant distance from the wall.
+		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector. We also make sure that it is a 2D movement in relation to the wall,
+		// so it won't change our distance from the wall.
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
+		RootDeltaFix = FVector::VectorPlaneProject(RootDeltaFix, GetHandNormal(HandData));
 		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.5f, FColor::Blue, false, 0.0f, 0, 2.0f);
 	}
 
@@ -385,6 +386,11 @@ FVector APrototype1Character::GetHandNormal(int HandIndex) const
 {
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
+	return GetHandNormal(HandData);
+}
+
+FVector APrototype1Character::GetHandNormal(const FHandsContextData& HandData) const
+{
 	return HandData.GetHandNormal();
 }
 

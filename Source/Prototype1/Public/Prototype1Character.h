@@ -143,6 +143,7 @@ public:
 	// Hand Normal
 	UFUNCTION(BlueprintPure)
 	FVector GetHandNormal(int HandIndex) const;
+	FVector GetHandNormal(const FHandsContextData& HandData) const;
 
 	// Hand Rotation
 	UFUNCTION(BlueprintPure)
