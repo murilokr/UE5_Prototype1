@@ -28,6 +28,9 @@ private:
 	bool IsClimbing() const;
 
 public:
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Climbing")
+	float MoveIntensityMultiplier = 50.0f;
+
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;
 };

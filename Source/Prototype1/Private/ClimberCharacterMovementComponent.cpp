@@ -42,7 +42,7 @@ void UClimberCharacterMovementComponent::PhysCustom(float DeltaSeconds, int32 It
 {
 	if (CustomMovementMode == ECustomMovementMode::CMOVE_Climbing)
 	{
-		//PhysClimbing(DeltaSeconds, Iterations);
+		PhysClimbing(DeltaSeconds, Iterations);
 	}
 
 	Super::PhysCustom(DeltaSeconds, Iterations);
@@ -55,6 +55,25 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		return;
 	}
 
+	FVector SnapArmsVector;
+	if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(CharacterOwner))
+	{
+		bool IsArmOutstretched;
+		FVector RootDeltaFixLeftHand = FVector::ZeroVector;
+		FVector RootDeltaFixRightHand = FVector::ZeroVector;
+		
+		if (ClimberCharacter->LeftHandData.IsGrabbing)
+		{
+			ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, FVector::ZeroVector, IsArmOutstretched, RootDeltaFixLeftHand);
+		}
+		if (ClimberCharacter->RightHandData.IsGrabbing)
+		{
+			ClimberCharacter->GetArmVector(ClimberCharacter->RightHandData, FVector::ZeroVector, IsArmOutstretched, RootDeltaFixRightHand);
+		}
+
+		// Snapping Root back to a acceptable shoulder distance from the hand.
+		SnapArmsVector = RootDeltaFixLeftHand + RootDeltaFixRightHand;
+	}
 
 	RestorePreAdditiveRootMotionVelocity();
 
@@ -63,7 +82,9 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	{
 		const float Friction = 0.5f * GetPhysicsVolume()->FluidFriction;
 
-		Acceleration += HandMoveDir;
+		//Acceleration += HandMoveDir;
+		Velocity += SnapArmsVector + (HandMoveDir * MoveIntensityMultiplier * DeltaSeconds); //Snapping arms to their limit is an impulse.
+		HandMoveDir = FVector::ZeroVector;
 
 		// Important!! - Updates velocity and acceleration with given friction and deceleration.
 		CalcVelocity(DeltaSeconds, Friction, true, GetMaxBrakingDeceleration());
@@ -76,13 +97,6 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 	FVector OldLocation = UpdatedComponent->GetComponentLocation();
 	const FVector Delta = Velocity * DeltaSeconds;
-
-	if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(CharacterOwner))
-	{
-		bool IsArmOutstretched;
-		FVector RootDeltaFix;
-		ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, Delta, IsArmOutstretched, RootDeltaFix);
-	}
 
 	// The actual movement.
 	FHitResult Hit(1.f);

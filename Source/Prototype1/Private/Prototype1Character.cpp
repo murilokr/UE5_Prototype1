@@ -149,8 +149,6 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	// But if we are looking around, ignore sending data to hands.
 	if (IsGrabbing() && !IsFreeLooking)
 	{
-		// TODO: Add passes to this on our custom CMC, to gather hand data and apply movement if needed. These 2 functions below should just update the 
-		// hand move delta.
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
 		return;
@@ -186,7 +184,6 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
 	const FVector MoveDir = -MouseInput;
-	// We need to save MoveDir, as this is the actual ammount of movement that we'll want to apply, but we do that in our custom CMC.
 
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
 	bool ArmOverstretched;
@@ -196,17 +193,9 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
-		//ClimberMovementComponent->AddInputVector(MoveDir); // This affects Acceleration.
-		ClimberMovementComponent->Velocity += MoveDir; // This affects Velocity.
-		
 		//TODO: We may want to INCREMENT here for each hand.
-		//ClimberMovementComponent->HandMoveDir = MoveDir;
+		ClimberMovementComponent->HandMoveDir = MoveDir;
 	}
-
-
-	// This is placeholder until CMC is fixed.
-	// Snapping Root back to a acceptable shoulder distance from the hand.
-	ClimberMovementComponent->Velocity += RootDeltaFix;
 
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
