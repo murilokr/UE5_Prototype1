@@ -55,40 +55,70 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		return;
 	}
 
+	RestorePreAdditiveRootMotionVelocity();
+
+	const FVector Gravity = -GetGravityDirection() * GetGravityZ();
+	Velocity = NewFallVelocity(/*Velocity*/FVector::ZeroVector, Gravity, DeltaSeconds);
+
+	Velocity += HandMoveDir * MoveIntensityMultiplier;// *DeltaSeconds;
+	HandMoveDir = FVector::ZeroVector;
+
 	FVector SnapArmsVector;
 	if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(CharacterOwner))
 	{
 		bool IsArmOutstretched;
 		FVector RootDeltaFixLeftHand = FVector::ZeroVector;
 		FVector RootDeltaFixRightHand = FVector::ZeroVector;
+
+		const FVector BodyOffset = Velocity * DeltaSeconds;
 		
 		if (ClimberCharacter->LeftHandData.IsGrabbing)
 		{
-			ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, FVector::ZeroVector, IsArmOutstretched, RootDeltaFixLeftHand);
+			ClimberCharacter->GetArmVector(ClimberCharacter->LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
 		}
 		if (ClimberCharacter->RightHandData.IsGrabbing)
 		{
-			ClimberCharacter->GetArmVector(ClimberCharacter->RightHandData, FVector::ZeroVector, IsArmOutstretched, RootDeltaFixRightHand);
+			ClimberCharacter->GetArmVector(ClimberCharacter->RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
 		}
 
 		// Snapping Root back to a acceptable shoulder distance from the hand.
+		// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
 		SnapArmsVector = RootDeltaFixLeftHand + RootDeltaFixRightHand;
 	}
+	
+	if (!SnapArmsVector.IsZero())
+	{
+		const FVector VelocityWithoutArmStretch = Velocity;
+		Velocity += SnapArmsVector * ArmStretchIntensityMultiplier; //Snapping arms to their limit is a force. Since we want it to zero out with gravity when we have our arm stretched up high, (GravityForce + ArmStretchForce = 0)
+		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, TEXT("Applying arm stretch"));
+		bIsArmsStretchVelocityApplied = true;
+		
+		//if (!VelocityWithoutArmStretch.IsZero() && (Velocity | VelocityWithoutArmStretch) <= 0.0f)
+		//{
+		//	GEngine->AddOnScreenDebugMessage(2, 1.0f, FColor::Red, TEXT("Stopping velocity, since arm stretch made us change directions"));
+		//    Velocity = FVector::ZeroVector;
+		//	//StopMovementImmediately();
+		//}
+	}
+	/*else if (bIsArmsStretchVelocityApplied)
+	{
+		bIsArmsStretchVelocityApplied = false;
+		StopMovementImmediately();
+	}*/
 
-	RestorePreAdditiveRootMotionVelocity();
+	ApplyVelocityBraking(DeltaSeconds, GetPhysicsVolume()->FluidFriction, GetMaxBrakingDeceleration());
+
 
 	// Calculates velocity if not being controlled by root motion.
 	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 	{
-		const float Friction = 0.5f * GetPhysicsVolume()->FluidFriction;
+		const float Friction = GetPhysicsVolume()->FluidFriction;
 
-		//Acceleration += HandMoveDir;
-		Velocity += SnapArmsVector + (HandMoveDir * MoveIntensityMultiplier * DeltaSeconds); //Snapping arms to their limit is an impulse.
-		HandMoveDir = FVector::ZeroVector;
-
-		// Important!! - Updates velocity and acceleration with given friction and deceleration.
-		CalcVelocity(DeltaSeconds, Friction, true, GetMaxBrakingDeceleration());
+		//Velocity = FVector::ZeroVector;
+		//CalcVelocity(DeltaSeconds, Friction, true, GetMaxBrakingDeceleration());
 	}
+
+	
 
 	ApplyRootMotionToVelocity(DeltaSeconds);
 
@@ -143,11 +173,11 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		}
 	}
 
-	// Velocity based on distance traveled.
-	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
-	{
-		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
-	}
+	//// Velocity based on distance traveled.
+	//if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
+	//{
+	//	Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
+	//}
 }
 
 bool UClimberCharacterMovementComponent::IsClimbing() const

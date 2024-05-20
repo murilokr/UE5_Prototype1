@@ -29,9 +29,14 @@ private:
 
 public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Climbing")
-	float MoveIntensityMultiplier = 50.0f;
+	float MoveIntensityMultiplier = 2.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	float ArmStretchIntensityMultiplier = 200.0f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;
+
+	bool bIsArmsStretchVelocityApplied = false;
 };
 
