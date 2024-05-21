@@ -23,8 +23,6 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 		{
 			ClimberCharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
 			ClimberCharacterOwner->ClimbingCollider->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-			//StopMovementImmediately(); //Hmm
 		}
 	}
 }
@@ -93,10 +91,12 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 			{
 				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+				RootDeltaFixLeftHand = FVector::VectorPlaneProject(RootDeltaFixLeftHand, ClimberCharacterOwner->LeftHandData.GetHandNormal());
 			}
 			if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 			{
 				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+				RootDeltaFixRightHand = FVector::VectorPlaneProject(RootDeltaFixRightHand, ClimberCharacterOwner->RightHandData.GetHandNormal());
 			}
 
 			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
@@ -113,25 +113,11 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				Velocity += (SnapArmsVector * ArmStretchIntensityMultiplier * DeltaSeconds);// / DeltaSeconds; //Snapping arms to their limit is a force. Since we want it to zero out with gravity when we have our arm stretched up high, (GravityForce + ArmStretchForce = 0)
 				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"), 
 					SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
-				
-				//bIsArmsStretchVelocityApplied = true;
-
-				//if (!VelocityWithoutArmStretch.IsZero() && (Velocity | VelocityWithoutArmStretch) <= 0.0f)
-				//{
-				//	GEngine->AddOnScreenDebugMessage(2, 1.0f, FColor::Red, TEXT("Stopping velocity, since arm stretch made us change directions"));
-				//    Velocity = FVector::ZeroVector;
-				//	//StopMovementImmediately();
-				//}
 			}
-			/*else if (bIsArmsStretchVelocityApplied)
-			{
-				bIsArmsStretchVelocityApplied = false;
-				StopMovementImmediately();
-			}*/
 		}
 
 		HandMoveDir = FVector::ZeroVector;
-		CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
+		//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
 	}
 
 	ApplyRootMotionToVelocity(DeltaSeconds);

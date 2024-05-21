@@ -194,18 +194,12 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	//const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
 	//if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
-		//TODO: We may want to INCREMENT here for each hand.
 		ClimberMovementComponent->HandMoveDir += MoveDir;
 	}
 
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
-	//GEngine->AddOnScreenDebugMessage(2, 2.5f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmVector.Length()));
-	/*if (MouseMovingTowardsHand)
-	{
-		GEngine->AddOnScreenDebugMessage(3, 0.16f, FColor::Emerald, TEXT("Mouse moving towards Hand!!"));
-	}*/
 
 	/** GrabRot relative to HandLocation */
 	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
@@ -402,11 +396,11 @@ bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue)
 {
 	if (IsFreeLooking)
 	{
-		if (Delta.Yaw > FreeLookAngleLimit && LookAxisValue < 0.0f)
+		if (Delta.Yaw > FreeLookYawAngleLimit && LookAxisValue < 0.0f)
 		{
 			return false;
 		}
-		if (Delta.Yaw < -FreeLookAngleLimit && LookAxisValue > 0.0f)
+		if (Delta.Yaw < -FreeLookYawAngleLimit && LookAxisValue > 0.0f)
 		{
 			return false;
 		}
@@ -419,11 +413,11 @@ bool APrototype1Character::CanUsePitch(const FRotator& Delta, float LookAxisValu
 {
 	if (IsFreeLooking)
 	{
-		if (Delta.Pitch > FreeLookAngleLimit && LookAxisValue > 0.0f)
+		if (Delta.Pitch > FreeLookPitchAngleLimit && LookAxisValue > 0.0f)
 		{
 			return false;
 		}
-		if (Delta.Pitch < -FreeLookAngleLimit && LookAxisValue < 0.0f)
+		if (Delta.Pitch < -FreeLookPitchAngleLimit && LookAxisValue < 0.0f)
 		{
 			return false;
 		}

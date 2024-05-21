@@ -154,26 +154,29 @@ public:
 	bool IsGrabbing() const;
 	/** End of Hand Utility Functions */
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = PhysicalArms)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")
 	FHandsContextData LeftHandData;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = PhysicalArms)
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")
 	FHandsContextData RightHandData;
 
 	// Prevents overstretching. We let go if grabbed location is beyond this length.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float ArmsLengthUnits = 55.f;
 
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float HandSafeZone = 10.0f;
 
 	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float ClavicleShoulderLengthMultiplier = 0.5f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
-	float FreeLookAngleLimit = 35.0f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float FreeLookYawAngleLimit = 160.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float FreeLookPitchAngleLimit = 40.0f;
 
 protected:
 	virtual void BeginPlay();
