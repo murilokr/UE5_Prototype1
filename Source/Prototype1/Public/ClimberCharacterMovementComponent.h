@@ -32,21 +32,25 @@ private:
 	virtual void PhysCustom(float DeltaSeconds, int32 Iterations) override;
 
 	void PhysClimbing(float DeltaSeconds, int32 Iterations);
-
 	bool IsClimbing() const;
 
+	virtual float GetMaxBrakingDeceleration() const override;
+
 public:
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Climbing")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Character Movement: Climbing")
 	float MoveIntensityMultiplier = 2.0f;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float ArmStretchIntensityMultiplier = 200.0f;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float GravityForce = 5000.0f;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float WallFriction = 1.3;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Walking", meta = (ClampMin = "0", UIMin = "0"))
+	float BrakingDecelerationClimbing;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;

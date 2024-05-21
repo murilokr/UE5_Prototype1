@@ -162,7 +162,7 @@ public:
 
 	// Prevents overstretching. We let go if grabbed location is beyond this length.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)
-	float ArmsLengthUnits = 54.5f;
+	float ArmsLengthUnits = 55.f;
 
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = PhysicalArms)

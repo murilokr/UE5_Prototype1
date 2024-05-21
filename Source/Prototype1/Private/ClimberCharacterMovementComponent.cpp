@@ -77,7 +77,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	// Calculates velocity if not being controlled by root motion.
 	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 	{
-		Acceleration = HandMoveDir * MoveIntensityMultiplier;// *DeltaSeconds;
+		//Acceleration = HandMoveDir * MoveIntensityMultiplier;// *DeltaSeconds;
+		Velocity += HandMoveDir * MoveIntensityMultiplier * DeltaSeconds;
 		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 
 		FVector SnapArmsVector;
@@ -98,6 +99,10 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
 			}
 
+			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
+			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
+
+
 			// Snapping Root back to a acceptable shoulder distance from the hand.
 			// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
 			SnapArmsVector = RootDeltaFixLeftHand + RootDeltaFixRightHand;
@@ -105,7 +110,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (!SnapArmsVector.IsZero())
 			{
 				const FVector AccelWithoutArmStretch = Acceleration;
-				Acceleration += (SnapArmsVector * ArmStretchIntensityMultiplier);// / DeltaSeconds; //Snapping arms to their limit is a force. Since we want it to zero out with gravity when we have our arm stretched up high, (GravityForce + ArmStretchForce = 0)
+				Velocity += (SnapArmsVector * ArmStretchIntensityMultiplier * DeltaSeconds);// / DeltaSeconds; //Snapping arms to their limit is a force. Since we want it to zero out with gravity when we have our arm stretched up high, (GravityForce + ArmStretchForce = 0)
 				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"), 
 					SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 				
@@ -163,11 +168,21 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	//// Velocity based on distance traveled.
 	//if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 	//{
-		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
+		//Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
 	//}
 }
 
 bool UClimberCharacterMovementComponent::IsClimbing() const
 {
 	return MovementMode == EMovementMode::MOVE_Custom && CustomMovementMode == ECustomMovementMode::CMOVE_Climbing;
+}
+
+float UClimberCharacterMovementComponent::GetMaxBrakingDeceleration() const
+{
+	if (MovementMode == EMovementMode::MOVE_Custom && CustomMovementMode == ECustomMovementMode::CMOVE_Climbing)
+	{
+		return BrakingDecelerationClimbing;
+	}
+
+	return Super::GetMaxBrakingDeceleration();
 }

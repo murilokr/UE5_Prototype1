@@ -187,12 +187,12 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const FVector MoveDir = -MouseInput;
 
 	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
-	bool ArmOverstretched;
-	FVector RootDeltaFix;
-	const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched, RootDeltaFix);
-	FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);
-	const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
-	if (!ArmOverstretched || MouseMovingTowardsHand)
+	//bool ArmOverstretched;
+	//FVector RootDeltaFix;
+	//const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched, RootDeltaFix);
+	//FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);
+	//const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
+	//if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
 		//TODO: We may want to INCREMENT here for each hand.
 		ClimberMovementComponent->HandMoveDir += MoveDir;
@@ -201,24 +201,24 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
-	GEngine->AddOnScreenDebugMessage(2, 2.5f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmVector.Length()));
-	if (MouseMovingTowardsHand)
+	//GEngine->AddOnScreenDebugMessage(2, 2.5f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, FString::Printf(TEXT("%f"), ArmVector.Length()));
+	/*if (MouseMovingTowardsHand)
 	{
 		GEngine->AddOnScreenDebugMessage(3, 0.16f, FColor::Emerald, TEXT("Mouse moving towards Hand!!"));
-	}
+	}*/
 
 	/** GrabRot relative to HandLocation */
-	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
 
 	/** HandLocation */
-	//DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
+	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
 
 	/** HandNormal pointing outwards from HandLocation */
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
 
 	/** Arrow pointing from HandLocation to MoveDir */
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
 
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
