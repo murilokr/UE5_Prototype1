@@ -49,7 +49,7 @@ struct FHandsContextData
 
 	FVector GetHandNormal() const;
 
-	FRotator GetHandRotation(bool bShouldFlip, const FVector ActorRight) const;
+	FRotator GetHandRotation(bool bShouldFlip, const FVector PerpendicularUp) const;
 
 	// Grab Target Position.
 	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const;
