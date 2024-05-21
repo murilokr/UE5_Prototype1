@@ -13,10 +13,18 @@ enum ECustomMovementMode
 	CMOVE_MAX			UMETA(Hidden),
 };
 
+class APrototype1Character;
+
 UCLASS()
 class PROTOTYPE1_API UClimberCharacterMovementComponent : public UCharacterMovementComponent
 {
 	GENERATED_BODY()
+
+protected:
+	virtual void InitializeComponent() override;
+
+	UPROPERTY(Transient)
+	APrototype1Character* ClimberCharacterOwner;
 
 private:
 	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
@@ -33,6 +41,12 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
 	float ArmStretchIntensityMultiplier = 200.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	float GravityForce = 5000.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Climbing")
+	float WallFriction = 1.3;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;

@@ -179,6 +179,7 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
+	// TODO: Find a better way to get GrabRot, since if we are holding on to something, but looking at an angle to the wall, our Right vector won't be aligned with the wall.
 	const FRotator GrabRot = FRotationMatrix::MakeFromXY(HandNormal, GetActorRotation().RotateVector(FVector::YAxisVector)).Rotator();
 
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
@@ -194,7 +195,7 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	if (!ArmOverstretched || MouseMovingTowardsHand)
 	{
 		//TODO: We may want to INCREMENT here for each hand.
-		ClimberMovementComponent->HandMoveDir = MoveDir;
+		ClimberMovementComponent->HandMoveDir += MoveDir;
 	}
 
 	// Debugs
@@ -388,6 +389,7 @@ FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
 	// Flip RightHand only.
+	// TODO: Find a better way to get GrabRot, since if we are holding on to something, but looking at an angle to the wall, our Right vector won't be aligned with the wall.
 	return HandData.GetHandRotation(HandIndex == 0, GetActorRotation().RotateVector(FVector::YAxisVector));
 }
 
