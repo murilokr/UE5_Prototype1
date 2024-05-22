@@ -70,11 +70,6 @@ protected:
 	UClimberCharacterMovementComponent* ClimberMovementComponent;
 
 public:
-
-	/** Collider to use when climbing. RootComponent(CapsuleMesh) is used only when grounded/walking or falling */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	UCapsuleComponent* ClimbingCollider;
-
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Mesh, meta = (AllowPrivateAccess = "true"))
 	USkeletalMeshComponent* Mesh1P;

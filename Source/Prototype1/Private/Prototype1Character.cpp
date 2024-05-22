@@ -24,14 +24,7 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	ClimberMovementComponent = Cast<UClimberCharacterMovementComponent>(GetCharacterMovement());
 
 	// Set size for collision capsule
-	GetCapsuleComponent()->InitCapsuleSize(55.f, 96.0f);
-
-	// Create a CapsuleComponent
-	ClimbingCollider = CreateDefaultSubobject<UCapsuleComponent>(TEXT("ClimbingCollider"));
-	ClimbingCollider->SetupAttachment(GetCapsuleComponent());
-	ClimbingCollider->InitCapsuleSize(55.f, 55.f); // Actually a sphere, not a capsule :P
-	ClimbingCollider->SetRelativeLocation(FVector(0.f, 0.f, 41.f));
-	ClimbingCollider->SetCollisionObjectType(ECollisionChannel::ECC_Pawn);
+	GetCapsuleComponent()->InitCapsuleSize(40.0f, 96.0f);
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));

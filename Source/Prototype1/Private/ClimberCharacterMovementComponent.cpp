@@ -14,15 +14,13 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 	{
 		if (IsClimbing())
 		{
-			ClimberCharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-			ClimberCharacterOwner->ClimbingCollider->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+			ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(50.0f);
 		}
 
 		const bool bWasClimbing = PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Climbing;
 		if (bWasClimbing)
 		{
-			ClimberCharacterOwner->GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
-			ClimberCharacterOwner->ClimbingCollider->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+			ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.0f);
 		}
 	}
 }
