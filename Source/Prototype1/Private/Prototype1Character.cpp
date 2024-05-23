@@ -230,10 +230,14 @@ void APrototype1Character::Grab(int HandIndex)
 		return;
 	}
 
+	// Calculating VerticalExtension that goes from 1 to 2. This is to increase a bit on the trace distance if looking upwards.
+	const float TraceVerticalExtension = FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
+	GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
+
 	const FName ClavicleBone = (HandIndex == 0) ? FName("clavicle_r") : FName("clavicle_l");
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(ClavicleBone);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
-	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * (ArmsLengthUnits + ClavicleShoulderLength);
+	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
 	const float TraceLength = TraceDir.SquaredLength();
 
