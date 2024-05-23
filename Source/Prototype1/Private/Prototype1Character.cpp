@@ -302,10 +302,24 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 	RootDeltaFix = FVector::ZeroVector;
 
 	const FVector HandLocation = GetSafeHandLocation(HandData);
+	const FVector HandNormal = HandData.GetHandNormal();
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal);
+
 	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
 
 	FVector OutArmVector = ShoulderOffset - HandLocation;
-	OutIsOverstretched = OutArmVector.SquaredLength() >= ArmsLengthUnitsSquared;
+	const FVector ArmVectorProjected = FVector::VectorPlaneProject(OutArmVector, HandNormal).GetSafeNormal();
+
+	// Check if we need to apply Stretch Multiplier
+	const float Angle = FMath::RadiansToDegrees(FMath::Asin(ArmVectorProjected | HandRelativeUp));
+	const float AngleNormalized = (Angle - ArmStretchMultiplierMinAngle) / (ArmStretchMultiplierMaxAngle - ArmStretchMultiplierMinAngle);
+	const float StretchMultiplier = FMath::Max(1 + (ArmStretchMultiplierCurve->GetFloatValue(AngleNormalized) * (ArmStretchMultiplier - 1)), 1.0f);
+
+	// Check if arm is stretched with added multiplier.
+	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits * StretchMultiplier);
+
+	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
+		Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
 
 	// If Arm is Overstretched, then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (OutIsOverstretched)

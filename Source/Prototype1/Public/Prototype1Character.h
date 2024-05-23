@@ -159,6 +159,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float ArmsLengthUnits = 55.f;
 
+	// How much above ArmsLengthUnits are we going to allow when dragging given Min and Max angle.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="1", UIMax="2", ClampMin="1", ClampMax="2"))
+	float ArmStretchMultiplier = 1.2f;
+
+	// The minimum angle from shoulder to hand (2D) to start sampling ArmStretchMultiplier with ArmStretchMultiplierCurve to apply onto ArmsLengthUnits.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
+	float ArmStretchMultiplierMinAngle = 1.2f;
+
+	// The maximum angle from shoulder to hand (2D) to start sampling ArmStretchMultiplier with ArmStretchMultiplierCurve to apply onto ArmsLengthUnits.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
+	float ArmStretchMultiplierMaxAngle = 1.2f;
+
+	// The curve float that will sample between 0.1 (MinAngle-MaxAngle) to apply ArmStretchMultiplier onto ArmsLengthUnits.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	TObjectPtr<UCurveFloat> ArmStretchMultiplierCurve;
+
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float HandSafeZone = 10.0f;
