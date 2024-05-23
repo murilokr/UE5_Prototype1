@@ -172,40 +172,30 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
-	// TODO: Find a better way to get GrabRot, since if we are holding on to something, but looking at an angle to the wall, our Right vector won't be aligned with the wall.
-	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, FVector::DownVector).Rotator();
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandNormal);
+	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
 
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
 	const FVector MoveDir = -MouseInput;
-
-	// We can orbit around with one arm, but if it stretches above ArmsLengthUnits, then movement is not applied.
-	//bool ArmOverstretched;
-	//FVector RootDeltaFix;
-	//const FVector ArmVector = GetArmVector(HandData, MoveDir, ArmOverstretched, RootDeltaFix);
-	//FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal);
-	//const bool MouseMovingTowardsHand = (MouseInput | ProjectedArmVector) > 0.f; 
-	//if (!ArmOverstretched || MouseMovingTowardsHand)
-	{
-		ClimberMovementComponent->HandMoveDir += MoveDir;
-	}
+	ClimberMovementComponent->HandMoveDir += MoveDir;
 
 	// Debugs
 	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
 
 	/** GrabRot relative to HandLocation */
-	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, -1.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
 
 	/** HandLocation */
-	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB());
+	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.0f);
 
 	/** HandNormal pointing outwards from HandLocation */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
 
 	/** Arrow pointing from HandLocation to MoveDir */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 1.0f);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, -1.0f, 0, 0.5f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.5f);
 
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
@@ -378,8 +368,8 @@ FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
 	// Flip RightHand only.
-	// TODO: Find a better way to get GrabRot, since if we are holding on to something, but looking at an angle to the wall, our Right vector won't be aligned with the wall.
-	return HandData.GetHandRotation(HandIndex == 0, FVector::DownVector);
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
+	return HandData.GetHandRotation(HandIndex == 0, HandRelativeUp);
 }
 
 bool APrototype1Character::IsGrabbing() const
@@ -465,11 +455,11 @@ FVector FHandsContextData::GetHandNormal() const
 	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHandNormal);
 }
 
-FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector PerpendicularUp) const
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const
 {
 	FVector HandNormal = GetHandNormal();
 	
-	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, PerpendicularUp).Rotator();
+	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, RelativeUp).Rotator();
 	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
 
 	// Invert the normal.
