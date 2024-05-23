@@ -318,20 +318,18 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 	{
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.5f, FColor::Green, false, 0.0f, 0, 2.0f);
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
 
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits;
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.5f, FColor::Green, false, 0.0f, 0, 2.0f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
 		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.5f, FColor::Purple, false, 0.0f, 0, 2.0f);
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
 
-		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector. We also make sure that it is a 2D movement in relation to the wall,
-		// so it won't change our distance from the wall.
+		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
-		RootDeltaFix = FVector::VectorPlaneProject(RootDeltaFix, GetHandNormal(HandData));
-		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.5f, FColor::Blue, false, 0.0f, 0, 2.0f);
+		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
 	}
 
 	return OutArmVector;
@@ -389,7 +387,7 @@ bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue)
 {
 	if (IsFreeLooking)
 	{
-		if (Delta.Yaw > FreeLookYawAngleLimit && LookAxisValue < 0.0f)
+		if (Delta.Yaw > FreeLookYawAngleLimit && LookAxisValue < 0.25f)
 		{
 			return false;
 		}

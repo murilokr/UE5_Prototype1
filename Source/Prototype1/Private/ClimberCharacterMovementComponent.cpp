@@ -14,7 +14,7 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 	{
 		if (IsClimbing())
 		{
-			ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(50.0f);
+			ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(45.0f);
 		}
 
 		const bool bWasClimbing = PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Climbing;
@@ -68,13 +68,13 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		}
 	}
 
-	Velocity += GravityForce * FVector::DownVector * DeltaSeconds;//-GetGravityDirection() * GetGravityZ();
+	FVector Acc = GravityForce * FVector::DownVector;
 
 	// Calculates velocity if not being controlled by root motion.
 	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 	{
-		//Acceleration = HandMoveDir * MoveIntensityMultiplier;// *DeltaSeconds;
-		Velocity += HandMoveDir * MoveIntensityMultiplier * DeltaSeconds;
+		Acc += HandMoveDir * MoveIntensityMultiplier;
+		
 		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 
 		FVector SnapArmsVector;
@@ -89,12 +89,10 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 			{
 				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
-				RootDeltaFixLeftHand = FVector::VectorPlaneProject(RootDeltaFixLeftHand, ClimberCharacterOwner->LeftHandData.GetHandNormal());
 			}
 			if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 			{
 				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
-				RootDeltaFixRightHand = FVector::VectorPlaneProject(RootDeltaFixRightHand, ClimberCharacterOwner->RightHandData.GetHandNormal());
 			}
 
 			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
@@ -108,7 +106,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (!SnapArmsVector.IsZero())
 			{
 				const FVector AccelWithoutArmStretch = Acceleration;
-				Velocity += (SnapArmsVector * ArmStretchIntensityMultiplier * DeltaSeconds);// / DeltaSeconds; //Snapping arms to their limit is a force. Since we want it to zero out with gravity when we have our arm stretched up high, (GravityForce + ArmStretchForce = 0)
+				Acc += SnapArmsVector * ArmStretchIntensityMultiplier;
 				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"), 
 					SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 			}
@@ -116,6 +114,13 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 		HandMoveDir = FVector::ZeroVector;
 		//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
+		Velocity += Acc * DeltaSeconds; //* DampingScale;
+
+		// Apply friction
+		Velocity = Velocity * (1.f - FMath::Min(WallFriction * DeltaSeconds, 1.f));
+
+		const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
+		DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
 	}
 
 	ApplyRootMotionToVelocity(DeltaSeconds);
@@ -152,7 +157,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	//// Velocity based on distance traveled.
 	//if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 	//{
-		//Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
+		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
 	//}
 }
 
