@@ -27,6 +27,8 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 
 void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity)
 {
+	Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
+
 	if (ClimberCharacterOwner)
 	{
 		if (ClimberCharacterOwner->IsGrabbing())
@@ -35,8 +37,6 @@ void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, c
 			SetMovementMode(EMovementMode::MOVE_Custom, ECustomMovementMode::CMOVE_Climbing);
 		}
 	}
-
-	Super::OnMovementUpdated(DeltaSeconds, OldLocation, OldVelocity);
 }
 
 void UClimberCharacterMovementComponent::PhysCustom(float DeltaSeconds, int32 Iterations)
