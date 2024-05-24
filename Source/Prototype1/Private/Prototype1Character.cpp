@@ -51,6 +51,9 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	JointTarget_ElbowR->SetupAttachment(Mesh1P);
 	JointTarget_ElbowR->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
 	JointTarget_ElbowR->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
+
+	LeftHandPhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("LeftHandPhysicsHandle"));
+	RightHandPhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("RightHandPhysicsHandle"));
 }
 
 void APrototype1Character::BeginPlay()
@@ -101,6 +104,7 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	}
 }
 
+// TODO: Make W/S move forward and backwards a little in relation to the arms when grabbed onto something.
 void APrototype1Character::Move(const FInputActionValue& Value)
 {
 	// input is a Vector2D
@@ -142,8 +146,8 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	// But if we are looking around, ignore sending data to hands.
 	if (IsGrabbing() && !IsFreeLooking)
 	{
-		MoveHand(LeftHandData, LookAxisVector);
-		MoveHand(RightHandData, LookAxisVector);
+		MoveHand(LeftHandData, LeftHandPhysicsHandle, LookAxisVector);
+		MoveHand(RightHandData, RightHandPhysicsHandle, LookAxisVector);
 		return;
 	}
 
@@ -163,7 +167,7 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	}
 }
 
-void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector)
+void APrototype1Character::MoveHand(FHandsContextData& HandData, UPhysicsHandleComponent* HandPhysicsHandle, FVector2D LookAxisVector)
 {
 	if (!HandData.IsGrabbing)
 	{
@@ -202,6 +206,10 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
 	// End of Debugs
 
+	if (UPrimitiveComponent* GrabbedComponent = HandPhysicsHandle->GetGrabbedComponent())
+	{
+		//HandPhysicsHandle->UpdateHandleTransform
+	}
 
 	// TODO: This might get used to add "Fake" anchor objects. (Objects that will fall once you grab them, to add risks)
 	//const FVector GrabTargetPosition = HandData.GetGrabPosition(TraceStart, TraceDir);
@@ -262,6 +270,12 @@ void APrototype1Character::Grab(int HandIndex)
 	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
 	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
 
+	if (HitResult.GetComponent()->IsSimulatingPhysics())
+	{
+		UPhysicsHandleComponent* HandPhysicsHandle = (HandIndex == 0) ? RightHandPhysicsHandle : LeftHandPhysicsHandle;
+		HandPhysicsHandle->GrabComponentAtLocation(HitResult.GetComponent(), HitResult.BoneName, HitResult.Location);
+	}
+
 	OnStartGrab(HandData, HandIndex);
 }
 
@@ -276,6 +290,9 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	}
 
 	HandData.IsGrabbing = false;
+
+	UPhysicsHandleComponent* HandPhysicsHandle = (HandIndex == 0) ? RightHandPhysicsHandle : LeftHandPhysicsHandle;
+	HandPhysicsHandle->ReleaseComponent();
 
 	OnStartGrab(HandData, HandIndex);
 }

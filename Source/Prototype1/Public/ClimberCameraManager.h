@@ -16,16 +16,23 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Climber Camera Manager")
 	FVector LagPerAxis;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
+	FVector MinAbsVelocityChangePerAxis = FVector(0.f, 20.f, 20.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
+	float VelocityWindowCacheDuration = 0.12f;
+
 protected:
 	virtual void UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime) override;
 
-	float ProcessVelocity(float DeltaSeconds);
+	void ProcessVelocity(FVector LocalCurVelocity, float DeltaSeconds);
 
 private:
 	UPROPERTY(Transient)
 	FVector Velocity;
 
-	TArray<float> VelocityCache;
+	TArray<FVector> VelocityWindowCache;
+	TArray<float> DeltaSecondsWindowCache;
 
 	FMinimalViewInfo OldPOV;
 };
