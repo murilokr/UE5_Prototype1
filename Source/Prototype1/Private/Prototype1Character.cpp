@@ -26,20 +26,27 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(40.0f, 96.0f);
 
+	MeshPivot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshPivot"));
+	MeshPivot->SetupAttachment(GetCapsuleComponent());
+	MeshPivot->SetRelativeLocation(FVector(-10.f, 0.f, 59.414395f));
+	MeshPivot->SetRelativeScale3D(FVector(1.f, 1.f, 1.f));
+
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
 	Mesh1P->SetOnlyOwnerSee(true);
-	Mesh1P->SetupAttachment(GetCapsuleComponent());
+	Mesh1P->SetupAttachment(MeshPivot);
 	Mesh1P->bCastDynamicShadow = false;
 	Mesh1P->CastShadow = false;
+	Mesh1P->SetRelativeLocation(FVector(10.f, 0.f, -180.82879f));
 	//Mesh1P->SetRelativeRotation(FRotator(0.9f, -19.19f, 5.2f));
 	//Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
-	Mesh1P->SetRelativeLocation(FVector(0.f, 0.f, -121.414395f));
+	//Mesh1P->SetRelativeLocation(FVector(0.f, 0.f, -121.414395f));
 
 	// Create a CameraComponent
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	FirstPersonCameraComponent->SetupAttachment(Mesh1P);
-	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
+	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
+	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 
@@ -120,6 +127,7 @@ void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 	IsFreeLooking = true;
 	//FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
+	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 }
 
 void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
@@ -132,6 +140,7 @@ void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 
 	IsFreeLooking = false;
 	bUseControllerRotationYaw = true;
+	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 }
 
 void APrototype1Character::Look(const FInputActionValue& Value)
