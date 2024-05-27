@@ -140,6 +140,8 @@ void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 
 	IsFreeLooking = false;
 	bUseControllerRotationYaw = true;
+
+	FirstPersonCameraComponent->SetRelativeRotation(FQuat::Identity);
 	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 }
 
