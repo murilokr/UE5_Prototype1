@@ -19,6 +19,29 @@ struct FInputActionValue;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
+UENUM(BlueprintType)
+enum EElbowSetupType
+{
+	ESETUP_Climbing		UMETA(DisplayName = "Elbow - Climbing Setup"),
+	ESETUP_Idle			UMETA(DisplayName = "Elbow - Idle Setup"),
+	ESETUP_Mantling		UMETA(DisplayName = "Elbow - Mantling Setup"), // Unused
+	ESETUP_MAX			UMETA(Hidden),
+};
+
+USTRUCT(BlueprintType)
+struct FElbowSetup
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	TEnumAsByte<EElbowSetupType> SetupType;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector LeftElbowRelativeLocation;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector RightElbowRelativeLocation;
+};
 
 USTRUCT(BlueprintType)
 struct FHandsContextData
@@ -40,6 +63,14 @@ struct FHandsContextData
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector LocalHandLocation;
+
+	// These are locally static, but change in world, so we'll have to convert it when needed.
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	FVector LocalHandIdleLocation;
+
+	// These are locally static, but change in world, so we'll have to convert it when needed.
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	FRotator LocalHandIdleRotation;
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector LocalHandNormal;
@@ -192,6 +223,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float FreeLookPitchAngleLimit = 40.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	TArray<FElbowSetup> ElbowsSetups;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	FVector LeftHandIdlePositionLocal = FVector(30.f, -15.f, 155.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	FRotator LeftHandIdleRotationLocal = FRotator(72.366f, 82.496f, 176.927f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	FVector RightHandIdlePositionLocal = FVector(30.f, 15.f, 155.f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	FRotator RightHandIdleRotationLocal = FRotator(72.366f, -82.496f, 176.927f);
+
 protected:
 	virtual void BeginPlay();
 
@@ -230,6 +276,8 @@ protected:
 
 	/** Called for grabbing input */
 	void StopGrabbing(const int HandIndex);
+
+	void SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType);
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;

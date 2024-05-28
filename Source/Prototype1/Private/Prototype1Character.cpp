@@ -65,6 +65,15 @@ void APrototype1Character::BeginPlay()
 	// Call the base class  
 	Super::BeginPlay();
 
+	LeftHandData.LocalHandIdleLocation = LeftHandIdlePositionLocal;
+	LeftHandData.LocalHandIdleRotation = LeftHandIdleRotationLocal;
+
+	RightHandData.LocalHandIdleLocation = RightHandIdlePositionLocal;
+	RightHandData.LocalHandIdleRotation = RightHandIdleRotationLocal;
+
+	SetElbowSetup(0, ESETUP_Idle);
+	SetElbowSetup(1, ESETUP_Idle);
+
 	// Since we start on the ground, default movement mode will be Walking.
 	ClimberMovementComponent->SetMovementMode(EMovementMode::MOVE_Walking);
 
@@ -258,6 +267,8 @@ void APrototype1Character::Grab(int HandIndex)
 		return;
 	}
 
+	SetElbowSetup(HandIndex, ESETUP_Climbing);
+
 	HandData.IsGrabbing = true;
 	HandData.HitResult = HitResult;
 
@@ -287,9 +298,25 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 		return;
 	}
 
+	SetElbowSetup(HandIndex, ESETUP_Idle);
+
 	HandData.IsGrabbing = false;
 
 	OnStartGrab(HandData, HandIndex);
+}
+
+void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType)
+{
+	UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
+
+	for (const FElbowSetup& ElbowSetup : ElbowsSetups)
+	{
+		if (ElbowSetup.SetupType == ElbowSetupType)
+		{
+			const FVector ElbowLocation = (HandIndex == 0) ? ElbowSetup.RightElbowRelativeLocation : ElbowSetup.LeftElbowRelativeLocation;
+			ElbowComponent->SetRelativeLocation(ElbowLocation);
+		}
+	}
 }
 
 FHandsContextData& APrototype1Character::GetMutableHandData(int HandIndex)
@@ -367,13 +394,17 @@ FVector APrototype1Character::GetHandLocation(const FHandsContextData& HandData)
 
 FVector APrototype1Character::GetSafeHandLocation(int HandIndex) const
 {
-	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
-
-	return GetSafeHandLocation(HandData);
+	return GetSafeHandLocation(GetHandData(HandIndex));
 }
 
 FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandData) const
 {
+	if (!HandData.IsGrabbing)
+	{
+		const FTransform MeshToWorld = Mesh1P->GetComponentToWorld();
+		return MeshToWorld.TransformPosition(HandData.LocalHandIdleLocation);
+	}
+
 	return HandData.GetHandLocation() + HandData.GetHandNormal() * HandSafeZone;
 }
 
@@ -391,7 +422,13 @@ FVector APrototype1Character::GetHandNormal(const FHandsContextData& HandData) c
 
 FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 {
-	FHandsContextData HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
+	FHandsContextData HandData = GetHandData(HandIndex);
+	if (!HandData.IsGrabbing)
+	{
+		const FTransform MeshToWorld = Mesh1P->GetComponentTransform();
+		return MeshToWorld.TransformRotation(HandData.LocalHandIdleRotation.Quaternion()).Rotator();
+		//return HandData.LocalHandIdleRotation;
+	}
 
 	// Flip RightHand only.
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
