@@ -316,15 +316,15 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType)
 {
 	float& TargetElbowLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
-	TEnumAsByte<EElbowSetupType>& TargetElbowSetup = (HandIndex == 0) ? CurrentRightArmSetupType : CurrentLeftArmSetupType;
-
-	// We can get the desired location from the setup type.
-	TargetElbowSetup = ElbowSetupType;
+	FElbowSetup& TargetElbowSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
 
 	for (const FElbowSetup& ElbowSetup : ElbowsSetups)
 	{
 		if (ElbowSetup.SetupType == ElbowSetupType)
 		{
+			// We can get the desired location from the setup.
+			TargetElbowSetup = ElbowSetup;
+
 			TargetElbowLerpTime = ElbowSetup.LerpInDuration;
 		}
 	}
@@ -333,7 +333,7 @@ void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupT
 void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaSeconds)
 {
 	UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
-	EElbowSetupType TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetupType : CurrentLeftArmSetupType;
+	FElbowSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
 	
 	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
 
@@ -341,7 +341,7 @@ void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaS
 	{
 		for (const FElbowSetup& ElbowSetup : ElbowsSetups)
 		{
-			if (ElbowSetup.SetupType == TargetArmSetup)
+			if (ElbowSetup.SetupType == TargetArmSetup.SetupType)
 			{
 				TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
 				const float TimeNormalized = 1.f - (TargetArmLerpTime / ElbowSetup.LerpInDuration);

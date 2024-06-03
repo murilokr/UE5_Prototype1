@@ -41,6 +41,10 @@ struct FElbowSetup
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector RightElbowRelativeLocation;
+
+	// Lerp property
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	float LerpInDuration = 0.5f;
 };
 
 USTRUCT(BlueprintType)
@@ -223,8 +227,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float FreeLookPitchAngleLimit = 40.0f;
 
+	// Elbow Lerping Properties
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	TArray<FElbowSetup> ElbowsSetups;
+
+	UPROPERTY(Transient, BlueprintReadOnly)
+	FElbowSetup CurrentLeftArmSetup;
+	UPROPERTY(Transient, BlueprintReadOnly)
+	FElbowSetup CurrentRightArmSetup;
+
+	UPROPERTY(Transient, BlueprintReadOnly)
+	float LeftArmLerpTime;
+	UPROPERTY(Transient, BlueprintReadOnly)
+	float RightArmLerpTime;
+	// End of Elbow Lerping Properties
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	FVector LeftHandIdlePositionLocal = FVector(30.f, -15.f, 155.f);
@@ -240,6 +256,7 @@ public:
 
 protected:
 	virtual void BeginPlay();
+	virtual void Tick(float DeltaSeconds);
 
 	/** Called for movement input */
 	void Move(const FInputActionValue& Value);
@@ -278,6 +295,7 @@ protected:
 	void StopGrabbing(const int HandIndex);
 
 	void SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType);
+	void InterpHandsAndElbow(const int HandIndex, float DeltaSeconds);
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
@@ -288,7 +306,6 @@ protected:
 
 private:
 
-	UPROPERTY()
 	FRotator FreeLookControlRotation;
 
 	// Cached "heavy" calculations for perf.
