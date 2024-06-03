@@ -117,6 +117,14 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	}
 }
 
+void APrototype1Character::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	InterpHandsAndElbow(0, DeltaSeconds);
+	InterpHandsAndElbow(1, DeltaSeconds);
+}
+
 // TODO: Make W/S move forward and backwards a little in relation to the arms when grabbed onto something.
 void APrototype1Character::Move(const FInputActionValue& Value)
 {
@@ -302,19 +310,46 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 
 	HandData.IsGrabbing = false;
 
-	OnStartGrab(HandData, HandIndex);
+	OnEndGrab(HandData, HandIndex);
 }
 
 void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType)
 {
-	UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
+	float& TargetElbowLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
+	TEnumAsByte<EElbowSetupType>& TargetElbowSetup = (HandIndex == 0) ? CurrentRightArmSetupType : CurrentLeftArmSetupType;
+
+	// We can get the desired location from the setup type.
+	TargetElbowSetup = ElbowSetupType;
 
 	for (const FElbowSetup& ElbowSetup : ElbowsSetups)
 	{
 		if (ElbowSetup.SetupType == ElbowSetupType)
 		{
-			const FVector ElbowLocation = (HandIndex == 0) ? ElbowSetup.RightElbowRelativeLocation : ElbowSetup.LeftElbowRelativeLocation;
-			ElbowComponent->SetRelativeLocation(ElbowLocation);
+			TargetElbowLerpTime = ElbowSetup.LerpInDuration;
+		}
+	}
+}
+
+void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaSeconds)
+{
+	UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
+	EElbowSetupType TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetupType : CurrentLeftArmSetupType;
+	
+	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
+
+	if (TargetArmLerpTime > 0.f)
+	{
+		for (const FElbowSetup& ElbowSetup : ElbowsSetups)
+		{
+			if (ElbowSetup.SetupType == TargetArmSetup)
+			{
+				TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
+				const float TimeNormalized = 1.f - (TargetArmLerpTime / ElbowSetup.LerpInDuration);
+
+				const FVector TargetElbowLocation = (HandIndex == 0) ? ElbowSetup.RightElbowRelativeLocation : ElbowSetup.LeftElbowRelativeLocation;
+				const FVector ElbowLocation = FMath::Lerp(ElbowComponent->GetRelativeLocation(), TargetElbowLocation, TimeNormalized);
+				ElbowComponent->SetRelativeLocation(ElbowLocation);
+			}
 		}
 	}
 }
