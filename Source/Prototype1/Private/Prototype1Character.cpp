@@ -65,6 +65,9 @@ void APrototype1Character::BeginPlay()
 	// Call the base class  
 	Super::BeginPlay();
 
+	RightHandData.HandIndex = 0;
+	LeftHandData.HandIndex = 1;
+
 	LeftHandData.LocalHandIdleLocation = LeftHandIdlePositionLocal;
 	LeftHandData.LocalHandIdleRotation = LeftHandIdleRotationLocal;
 
@@ -137,6 +140,16 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 		AddMovementInput(GetActorForwardVector(), MovementVector.Y);
 		AddMovementInput(GetActorRightVector(), MovementVector.X);
 	}
+}
+
+void APrototype1Character::ReleaseHand(int HandIndex)
+{
+	StopGrabbing(HandIndex);
+}
+
+void APrototype1Character::ReleaseHand(const FHandsContextData& HandData)
+{
+	StopGrabbing(HandData.HandIndex);
 }
 
 void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
@@ -293,6 +306,8 @@ void APrototype1Character::Grab(int HandIndex)
 	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
 	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
 
+	ClimberMovementComponent->SetHandGrabbing(HandData);
+
 	OnStartGrab(HandData, HandIndex);
 }
 
@@ -309,6 +324,8 @@ void APrototype1Character::StopGrabbing(int HandIndex)
 	SetElbowSetup(HandIndex, ESETUP_Idle);
 
 	HandData.IsGrabbing = false;
+
+	ClimberMovementComponent->ReleaseHand(HandData);
 
 	OnEndGrab(HandData, HandIndex);
 }
@@ -332,17 +349,17 @@ void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupT
 
 void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaSeconds)
 {
-	UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
-	FElbowSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
-	
 	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
 
 	if (TargetArmLerpTime > 0.f)
 	{
+		FElbowSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
 		for (const FElbowSetup& ElbowSetup : ElbowsSetups)
 		{
 			if (ElbowSetup.SetupType == TargetArmSetup.SetupType)
 			{
+				UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
+
 				TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
 				const float TimeNormalized = 1.f - (TargetArmLerpTime / ElbowSetup.LerpInDuration);
 
@@ -402,7 +419,7 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
 
-		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits;
+		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
 		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.

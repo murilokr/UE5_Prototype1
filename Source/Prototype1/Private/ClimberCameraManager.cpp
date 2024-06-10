@@ -81,8 +81,8 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 
 					OutVT.POV.Location = CameraRotation.RotateVector(TLocation);
 
-					/*GEngine->AddOnScreenDebugMessage(10, DeltaTime, FColor::Yellow, FString::Printf(TEXT("OldPOV.Location: %s - TargetPOV.Location: %s - OutVT.POV.Location: %s"),
-						*OldPOV.Location.ToString(), *TargetPOV.Location.ToString(), *OutVT.POV.Location.ToString()));*/
+					GEngine->AddOnScreenDebugMessage(10, DeltaTime, FColor::Yellow, FString::Printf(TEXT("dt: %f - OldPOV.Location: %s - TargetPOV.Location: %s - OutVT.POV.Location: %s"),
+						DeltaTime, *OldPOV.Location.ToString(), *TargetPOV.Location.ToString(), *OutVT.POV.Location.ToString()));
 				}
 			}
 		}

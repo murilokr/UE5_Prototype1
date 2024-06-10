@@ -52,6 +52,8 @@ struct FHandsContextData
 {
 	GENERATED_BODY()
 
+	int HandIndex;
+
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	bool IsGrabbing;
 
@@ -185,6 +187,11 @@ public:
 	// IsGrabbing
 	UFUNCTION(BlueprintPure)
 	bool IsGrabbing() const;
+
+	UFUNCTION(BlueprintCallable)
+	void ReleaseHand(int HandIndex);
+
+	void ReleaseHand(const FHandsContextData& HandData);
 	/** End of Hand Utility Functions */
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")

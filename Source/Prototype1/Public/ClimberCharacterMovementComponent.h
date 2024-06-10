@@ -14,6 +14,7 @@ enum ECustomMovementMode
 };
 
 class APrototype1Character;
+struct FHandsContextData;
 
 UCLASS()
 class PROTOTYPE1_API UClimberCharacterMovementComponent : public UCharacterMovementComponent
@@ -37,6 +38,9 @@ private:
 	virtual float GetMaxBrakingDeceleration() const override;
 
 public:
+	void SetHandGrabbing(const FHandsContextData& HandData);
+	void ReleaseHand(const FHandsContextData& HandData);
+
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Character Movement: Climbing")
 	float MoveIntensityMultiplier = 2.0f;
 
@@ -52,9 +56,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Walking", meta = (ClampMin = "0", UIMin = "0"))
 	float BrakingDecelerationClimbing;
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Physics Objects")
+	float ForceAppliedToPhysicsObjectMultiplier = 5.f;
+
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;
 
-	bool bIsArmsStretchVelocityApplied = false;
+private:
+	FVector PrevLeftHandObjectLocation;
+	FVector PrevRightHandObjectLocation;
 };
 

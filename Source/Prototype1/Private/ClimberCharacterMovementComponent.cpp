@@ -3,6 +3,104 @@
 #include "GameFramework/PhysicsVolume.h"
 #include "Prototype1Character.h"
 
+namespace MovementClimbingUtils
+{
+	bool IsDynamicGrabObject(const UPrimitiveComponent* GrabObject)
+	{
+		return (GrabObject && GrabObject->Mobility == EComponentMobility::Movable && GrabObject->IsSimulatingPhysics());
+	}
+
+	bool IsDynamicGrabObject(const FHandsContextData& HandData)
+	{
+		if (UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get())
+		{
+			return IsDynamicGrabObject(GrabObject);
+		}
+
+		return false;
+	}
+
+	void UpdateGrabbableObjectVelocity(const FHandsContextData& HandData, float DeltaSeconds, FVector& PrevHandObjectLocation, FVector& ArmFixVector, UClimberCharacterMovementComponent* ClimberCMC)
+	{
+		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
+		{
+			UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get();
+
+			const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
+			const FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation;
+			PrevHandObjectLocation = GrabObjectLocation;
+			const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
+
+			// Calculate Force to add to grabbed object.
+			// We start with player gravity
+			FVector ForceToAddToObject = ClimberCMC->Mass * FVector::DownVector;
+
+			// -ArmFixVector is the distance we want to move it, DeltaSeconds is the amount of time needed, and we have the initial velocity
+			// So we can calculate the actual force needed to move it towards ArmFixVector
+			// F = m . A
+			// S = u.dt + 1/2 . A . dt2
+			// We now need to calculate the acceleration since we know everything else.
+			// S = -ArmFixVector  // This is a distance, we should convert it to a force.
+			// u = GrabObjectVelocity
+			// dt = DeltaSeconds
+			// So to calculate acceleration, we have:
+			// -----> A = (2.(S-u.dt)) / dt2 <-----
+			const FVector Acceleration = (2 * (-ArmFixVector - GrabObjectVelocity * DeltaSeconds)) / (DeltaSeconds * DeltaSeconds);
+
+			// Then the final Force will be
+			// F = m . (2.(S-u.dt)) / dt2
+			ForceToAddToObject += Acceleration * ClimberCMC->Mass;//GrabObject->GetMass();
+			ForceToAddToObject *= ClimberCMC->ForceAppliedToPhysicsObjectMultiplier; /// DeltaSeconds;
+
+			// We still have a problem regarding the collision of our player and the object, we should do something.
+
+			const FTransform GrabObjectLocalToWorld = GrabObject->GetSocketTransform(HandData.HitResult.BoneName);
+			const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
+			DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
+
+			const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVectorNoScale(ForceToAddToObject);
+
+			// Calculate velocity before applying force.
+			//GrabObject->AddVelocityChangeImpulseAtLocation(ForceToAddToObject, GrabObjectHandWorldLocation, HandData.HitResult.BoneName);
+			GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
+			//GrabObject->AddForce(ForceToAddToObject, HandData.HitResult.BoneName, false);
+
+			if (GrabObjectVelocitySize > 100.f)
+			{
+				GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
+					FString::Printf(TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+				UE_LOG(LogTemp, Display, TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+					*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
+
+				/*if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
+				{
+					ClimberCharacter->ReleaseHand(HandData);
+				}*/
+			}
+			else
+			{
+				GEngine->AddOnScreenDebugMessage(20, 1.0f, FColor::Green,
+					FString::Printf(TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+				UE_LOG(LogTemp, Display, TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+					*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
+			}
+		}
+	}
+
+	void UpdateVelocityWithGrabbableObjectVelocity(const FHandsContextData& HandData, FVector& OutAccelerationVector)
+	{
+		if (UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get())
+		{
+			if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
+			{
+				OutAccelerationVector += GrabObject->ComponentVelocity;
+			}
+		}
+	}
+}
+
 void UClimberCharacterMovementComponent::InitializeComponent()
 {
 	ClimberCharacterOwner = Cast<APrototype1Character>(GetOwner());
@@ -68,6 +166,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		}
 	}
 
+	// We need to impart the velocity of the object that we are holding onto here.
 	FVector Acc = GravityForce * FVector::DownVector;
 
 	// Calculates velocity if not being controlled by root motion.
@@ -88,11 +187,29 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 			if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 			{
-				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+				const FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
+				ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+				if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
+				{
+					MovementClimbingUtils::UpdateGrabbableObjectVelocity(LeftHandData, DeltaSeconds, PrevLeftHandObjectLocation, RootDeltaFixLeftHand, this);
+				}
+				else
+				{
+					//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
+				}
 			}
 			if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 			{
-				ClimberCharacterOwner->GetArmVector(ClimberCharacterOwner->RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+				const FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
+				ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+				if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
+				{
+					MovementClimbingUtils::UpdateGrabbableObjectVelocity(RightHandData, DeltaSeconds, PrevRightHandObjectLocation, RootDeltaFixRightHand, this);
+				}
+				else
+				{
+					//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
+				}
 			}
 
 			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
@@ -174,4 +291,19 @@ float UClimberCharacterMovementComponent::GetMaxBrakingDeceleration() const
 	}
 
 	return Super::GetMaxBrakingDeceleration();
+}
+
+void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData& HandData)
+{
+	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+
+	UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get();
+	PrevHandObjectLocation = GrabObject->GetComponentLocation();
+}
+
+void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& HandData)
+{
+	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+
+	PrevHandObjectLocation = FVector::ZeroVector;
 }
