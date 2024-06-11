@@ -10,29 +10,36 @@ class PROTOTYPE1_API AClimberCameraManager : public APlayerCameraManager
 	GENERATED_BODY()
 
 public:
-	// Define os valores padrão para propriedades deste empty
 	AClimberCameraManager();
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Climber Camera Manager")
-	FVector LagPerAxis;
+	virtual void BeginPlay() override;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
-	FVector MinAbsVelocityChangePerAxis = FVector(0.f, 20.f, 20.f);
+	bool UseCustomLagFunction = true;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
-	float VelocityWindowCacheDuration = 0.12f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Climber Camera Manager", meta = (editcondition = "UseCustomLagFunction"))
+	FVector LagSpeedPerAxis;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", meta = (editcondition = "UseCustomLagFunction", ClampMin = "0.0", UIMin = "0.0"))
+	float CameraLagMaxDistance;
+
+	/**
+	 * If UseCameraLagSubstepping is true, sub-step camera damping so that it handles fluctuating frame rates well (though this comes at a cost).
+	 * @see CameraLagMaxTimeStep and USpringArmComponent
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", AdvancedDisplay)
+	bool UseCameraLagSubstepping = true;
+
+	/** Max time step used when sub-stepping camera lag. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", AdvancedDisplay, meta = (editcondition = "UseCameraLagSubstepping", ClampMin = "0.005", ClampMax = "0.5", UIMin = "0.005", UIMax = "0.5"))
+	float CameraLagMaxTimeStep;
 
 protected:
 	virtual void UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime) override;
 
-	void ProcessVelocity(FVector LocalCurVelocity, float DeltaSeconds);
-
 private:
 	UPROPERTY(Transient)
 	FVector Velocity;
-
-	TArray<FVector> VelocityWindowCache;
-	TArray<float> DeltaSecondsWindowCache;
 
 	FMinimalViewInfo OldPOV;
 };

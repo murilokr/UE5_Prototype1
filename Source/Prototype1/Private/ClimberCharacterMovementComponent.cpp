@@ -32,7 +32,7 @@ namespace MovementClimbingUtils
 
 			// Calculate Force to add to grabbed object.
 			// We start with player gravity
-			FVector ForceToAddToObject = ClimberCMC->Mass * FVector::DownVector;
+			FVector ForceToAddToObject = ClimberCMC->Mass * ClimberCMC->Velocity;
 
 			// -ArmFixVector is the distance we want to move it, DeltaSeconds is the amount of time needed, and we have the initial velocity
 			// So we can calculate the actual force needed to move it towards ArmFixVector
@@ -51,6 +51,8 @@ namespace MovementClimbingUtils
 			ForceToAddToObject += Acceleration * GrabObject->GetMass();//ClimberCMC->Mass;
 			ForceToAddToObject *= ClimberCMC->ForceAppliedToPhysicsObjectMultiplier; // This is acting more like a damp/drag, which is fine.
 
+			// TODO: We should find a way to damp the force when both the player and the object are falling.
+
 			const FTransform GrabObjectLocalToWorld = GrabObject->GetSocketTransform(HandData.HitResult.BoneName);
 			const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
 			GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
@@ -58,6 +60,7 @@ namespace MovementClimbingUtils
 			// Debugs
 			const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
 			DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
+			DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + GrabObject->ComponentVelocity, 1.5f, FColor::Emerald, false, 0.25f, 0, 0.5f);
 
 			const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
 			if (GrabObjectVelocitySize > 100.f)
@@ -162,7 +165,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	}
 
 	// We need to impart the velocity of the object that we are holding onto here.
-	FVector Acc = GravityForce * FVector::DownVector;
+	FVector Acc = FVector::ZeroVector;
+	Acc += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
 
 	// Calculates velocity if not being controlled by root motion.
 	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
@@ -207,9 +211,6 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				}
 			}
 
-			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
-			//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
-
 
 			// Snapping Root back to a acceptable shoulder distance from the hand.
 			// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
@@ -231,8 +232,9 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		// Apply friction
 		Velocity = Velocity * (1.f - FMath::Min(WallFriction * DeltaSeconds, 1.f));
 
-		const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
-		DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
+		// Debug
+		//const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
+		//DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
 	}
 
 	ApplyRootMotionToVelocity(DeltaSeconds);

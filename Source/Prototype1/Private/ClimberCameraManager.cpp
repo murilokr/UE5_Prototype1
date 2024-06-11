@@ -4,20 +4,46 @@
 
 #include "Kismet/KismetMathLibrary.h"
 
-// Result vector is change of velocity in each component.
-static FVector VectorsMagnitude(const TArray<FVector>& list, FVector& minVector, FVector& maxVector)
+namespace CameraMathUtils
 {
-	if (list.Num() == 0) return FVector::ZeroVector;
+	FVector VInterpToPerAxis(const FVector& Current, const FVector& Target, float DeltaTime, FVector InterpSpeedPerAxis)
+	{
+		// Distance to reach
+		const FVector Dist = Target - Current;
 
-	maxVector = list[list.Num() - 1].GetAbs();
-	minVector = list[0].GetAbs();
+		// If distance is too small, just set the desired location
+		if (Dist.SizeSquared() < UE_KINDA_SMALL_NUMBER)
+		{
+			return Target;
+		}
 
+		// Delta Move per axis, Clamp so we do not over shoot.
+		float DeltaMoveX = Dist.X * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.X, 0.f, 1.f);
+		// If no interp speed, jump to target value
+		DeltaMoveX = (InterpSpeedPerAxis.X <= 0.f) ? Target.X : DeltaMoveX;
 
-	return maxVector - minVector;
-}
+		float DeltaMoveY = Dist.Y * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.Y, 0.f, 1.f);
+		// If no interp speed, jump to target value
+		DeltaMoveY = (InterpSpeedPerAxis.Y <= 0.f) ? Target.Y : DeltaMoveY;
+
+		float DeltaMoveZ = Dist.Z * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.Z, 0.f, 1.f);
+		// If no interp speed, jump to target value
+		DeltaMoveZ = (InterpSpeedPerAxis.Z <= 0.f) ? Target.Z : DeltaMoveZ;
+
+		const FVector DeltaMove = FVector(DeltaMoveX, DeltaMoveY, DeltaMoveZ);
+		return Current + DeltaMove;
+	}
+};
 
 AClimberCameraManager::AClimberCameraManager()
 {
+	UseCameraLagSubstepping = true;
+	CameraLagMaxTimeStep = 1.f / 60.f;
+}
+
+void AClimberCameraManager::BeginPlay()
+{
+	CameraLagMaxTimeStep = FMath::Max(CameraLagMaxTimeStep, 1.f / 200.f);
 }
 
 void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime)
@@ -26,6 +52,7 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(OwningController->GetPawn()))
 		{
+			// Deal with rotating the MeshPivot
 			if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
 			{
 				const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
@@ -42,47 +69,50 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 				OutVT.Target->CalcCamera(DeltaTime, OutVT.POV);
 			}
 
-			if (UClimberCharacterMovementComponent* ClimberCMC = ClimberCharacter->GetCustomCharacterMovement())
+			if (UseCustomLagFunction)
 			{
 				if (!OldPOV.Location.IsZero())
 				{
-					const FRotator CameraRotation = GetCameraRotation();
-					const FVector UnrotatedCurVelocity = CameraRotation.RotateVector(ClimberCMC->Velocity); // Locally transformed velocity
-					ProcessVelocity(UnrotatedCurVelocity, DeltaTime);
-
-					FVector MinVec;
-					FVector MaxVec;
-					const FVector VelocityDelta = VectorsMagnitude(VelocityWindowCache, MinVec, MaxVec);
-					GEngine->AddOnScreenDebugMessage(10, DeltaTime, FColor::Yellow, FString::Printf(TEXT("Velocity Delta: %s (Min: %s - Max: %s)"),
-						*VelocityDelta.ToString(), *MinVec.ToString(), *MaxVec.ToString()));
-
-					GEngine->AddOnScreenDebugMessage(11, DeltaTime, FColor::Yellow, FString::Printf(TEXT("Velocity Unrotated: %s"),
-						*UnrotatedCurVelocity.ToString()));
-
-					// Check for velocity change per component.
-					bool VelocityXThreshold = MinAbsVelocityChangePerAxis.X > 0 && FMath::Abs(VelocityDelta.X) > MinAbsVelocityChangePerAxis.X;
-					bool VelocityYThreshold = MinAbsVelocityChangePerAxis.Y > 0 && FMath::Abs(VelocityDelta.Y) > MinAbsVelocityChangePerAxis.Y;
-					bool VelocityZThreshold = MinAbsVelocityChangePerAxis.Z > 0 && FMath::Abs(VelocityDelta.Z) > MinAbsVelocityChangePerAxis.Z;
-
-					float XT = (VelocityXThreshold && LagPerAxis.X > 0) ? DeltaTime * LagPerAxis.X : 1.f;
-
 					const FMinimalViewInfo TargetPOV = OutVT.POV;
 
-					const FVector UnrotatedCurLocation = CameraRotation.UnrotateVector(OldPOV.Location);
-					const FVector UnrotatedTargetLocation = CameraRotation.UnrotateVector(TargetPOV.Location);
+					const FRotator CameraRotation = GetCameraRotation();
+					FVector UnrotatedCurLocation = CameraRotation.UnrotateVector(OldPOV.Location);
+					FVector UnrotatedTargetLocation = CameraRotation.UnrotateVector(TargetPOV.Location);
 
-					//const bool ExtrapolateY = 
+					FVector TLocation = UnrotatedTargetLocation;
 
-					const FVector TLocation = FVector(
-						FMath::Lerp(UnrotatedCurLocation.X, UnrotatedTargetLocation.X, (LagPerAxis.X > 0) ? DeltaTime * LagPerAxis.X : 1.f),
-						FMath::Lerp(UnrotatedCurLocation.Y, UnrotatedTargetLocation.Y, (LagPerAxis.Y > 0) ? DeltaTime * LagPerAxis.Y : 1.f),
-						FMath::Lerp(UnrotatedCurLocation.Z, UnrotatedTargetLocation.Z, (LagPerAxis.Z > 0) ? DeltaTime * LagPerAxis.Z : 1.f)
-					);
+					if (UseCameraLagSubstepping && DeltaTime > CameraLagMaxTimeStep && LagSpeedPerAxis.SizeSquared() > 0.f)
+					{
+						const FVector ArmMovementStep = (TLocation - UnrotatedCurLocation) * (1.f / DeltaTime);
+						FVector LerpTarget = UnrotatedCurLocation;
+
+						float RemainingTime = DeltaTime;
+						while (RemainingTime > UE_KINDA_SMALL_NUMBER)
+						{
+							const float LerpAmount = FMath::Min(CameraLagMaxTimeStep, RemainingTime);
+							LerpTarget += ArmMovementStep * LerpAmount;
+							RemainingTime -= LerpAmount;
+
+							TLocation = CameraMathUtils::VInterpToPerAxis(UnrotatedCurLocation, LerpTarget, LerpAmount, LagSpeedPerAxis);
+							UnrotatedCurLocation = TLocation;
+						}
+					}
+					else
+					{
+						TLocation = CameraMathUtils::VInterpToPerAxis(UnrotatedCurLocation, UnrotatedTargetLocation, DeltaTime, LagSpeedPerAxis);
+					}
+
+					// Clamp distance if requested
+					if (CameraLagMaxDistance > 0.f)
+					{
+						const FVector FromOrigin = TLocation - UnrotatedTargetLocation;
+						if (FromOrigin.SizeSquared() > FMath::Square(CameraLagMaxDistance))
+						{
+							TLocation = UnrotatedTargetLocation + FromOrigin.GetClampedToMaxSize(CameraLagMaxDistance);
+						}
+					}
 
 					OutVT.POV.Location = CameraRotation.RotateVector(TLocation);
-
-					GEngine->AddOnScreenDebugMessage(10, DeltaTime, FColor::Yellow, FString::Printf(TEXT("dt: %f - OldPOV.Location: %s - TargetPOV.Location: %s - OutVT.POV.Location: %s"),
-						DeltaTime, *OldPOV.Location.ToString(), *TargetPOV.Location.ToString(), *OutVT.POV.Location.ToString()));
 				}
 			}
 		}
@@ -96,20 +126,4 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 	//ViewTarget.Target.Get()
 	Velocity = (ViewTarget.POV.Location - OldPOV.Location / DeltaTime);
 	OldPOV = OutVT.POV;
-}
-
-void AClimberCameraManager::ProcessVelocity(FVector LocalCurVelocity, float DeltaSeconds)
-{
-	VelocityWindowCache.Add(LocalCurVelocity);
-	DeltaSecondsWindowCache.Add(DeltaSeconds);
-
-	float Sum = Algo::Accumulate(DeltaSecondsWindowCache, 0.0f);
-
-	while (Sum > (VelocityWindowCacheDuration))
-	{
-		VelocityWindowCache.RemoveAt(0);
-		DeltaSecondsWindowCache.RemoveAt(0);
-
-		Sum = Algo::Accumulate(DeltaSecondsWindowCache, 0.0f);
-	}
 }
