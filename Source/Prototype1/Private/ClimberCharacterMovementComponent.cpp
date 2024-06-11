@@ -29,7 +29,6 @@ namespace MovementClimbingUtils
 			const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
 			const FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation;
 			PrevHandObjectLocation = GrabObjectLocation;
-			const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
 
 			// Calculate Force to add to grabbed object.
 			// We start with player gravity
@@ -44,27 +43,23 @@ namespace MovementClimbingUtils
 			// u = GrabObjectVelocity
 			// dt = DeltaSeconds
 			// So to calculate acceleration, we have:
-			// -----> A = (2.(S-u.dt)) / dt2 <-----
+			// A = (2.(S-u.dt)) / dt2
 			const FVector Acceleration = (2 * (-ArmFixVector - GrabObjectVelocity * DeltaSeconds)) / (DeltaSeconds * DeltaSeconds);
 
 			// Then the final Force will be
 			// F = m . (2.(S-u.dt)) / dt2
-			ForceToAddToObject += Acceleration * ClimberCMC->Mass;//GrabObject->GetMass();
-			ForceToAddToObject *= ClimberCMC->ForceAppliedToPhysicsObjectMultiplier; /// DeltaSeconds;
-
-			// We still have a problem regarding the collision of our player and the object, we should do something.
+			ForceToAddToObject += Acceleration * GrabObject->GetMass();//ClimberCMC->Mass;
+			ForceToAddToObject *= ClimberCMC->ForceAppliedToPhysicsObjectMultiplier; // This is acting more like a damp/drag, which is fine.
 
 			const FTransform GrabObjectLocalToWorld = GrabObject->GetSocketTransform(HandData.HitResult.BoneName);
+			const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
+			GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
+
+			// Debugs
 			const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
 			DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
 
-			const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVectorNoScale(ForceToAddToObject);
-
-			// Calculate velocity before applying force.
-			//GrabObject->AddVelocityChangeImpulseAtLocation(ForceToAddToObject, GrabObjectHandWorldLocation, HandData.HitResult.BoneName);
-			GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
-			//GrabObject->AddForce(ForceToAddToObject, HandData.HitResult.BoneName, false);
-
+			const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
 			if (GrabObjectVelocitySize > 100.f)
 			{
 				GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
@@ -297,8 +292,10 @@ void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData
 {
 	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 
-	UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get();
-	PrevHandObjectLocation = GrabObject->GetComponentLocation();
+	if (UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get())
+	{
+		PrevHandObjectLocation = GrabObject->GetComponentLocation();
+	}
 }
 
 void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& HandData)
