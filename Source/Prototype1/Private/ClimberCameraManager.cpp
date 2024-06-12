@@ -19,16 +19,16 @@ namespace CameraMathUtils
 
 		// Delta Move per axis, Clamp so we do not over shoot.
 		float DeltaMoveX = Dist.X * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.X, 0.f, 1.f);
-		// If no interp speed, jump to target value
-		DeltaMoveX = (InterpSpeedPerAxis.X <= 0.f) ? Target.X : DeltaMoveX;
+		// If no interp speed, jump to Dist value
+		DeltaMoveX = (InterpSpeedPerAxis.X <= 0.f) ? Dist.X : DeltaMoveX;
 
 		float DeltaMoveY = Dist.Y * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.Y, 0.f, 1.f);
-		// If no interp speed, jump to target value
-		DeltaMoveY = (InterpSpeedPerAxis.Y <= 0.f) ? Target.Y : DeltaMoveY;
+		// If no interp speed, jump to Dist value
+		DeltaMoveY = (InterpSpeedPerAxis.Y <= 0.f) ? Dist.Y : DeltaMoveY;
 
 		float DeltaMoveZ = Dist.Z * FMath::Clamp<float>(DeltaTime * InterpSpeedPerAxis.Z, 0.f, 1.f);
-		// If no interp speed, jump to target value
-		DeltaMoveZ = (InterpSpeedPerAxis.Z <= 0.f) ? Target.Z : DeltaMoveZ;
+		// If no interp speed, jump to Dist value
+		DeltaMoveZ = (InterpSpeedPerAxis.Z <= 0.f) ? Dist.Z : DeltaMoveZ;
 
 		const FVector DeltaMove = FVector(DeltaMoveX, DeltaMoveY, DeltaMoveZ);
 		return Current + DeltaMove;
@@ -75,9 +75,12 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 				{
 					const FMinimalViewInfo TargetPOV = OutVT.POV;
 
-					const FRotator CameraRotation = GetCameraRotation();
+					const FRotator CameraRotation = ClimberCharacter->GetActorRotation();
 					FVector UnrotatedCurLocation = CameraRotation.UnrotateVector(OldPOV.Location);
 					FVector UnrotatedTargetLocation = CameraRotation.UnrotateVector(TargetPOV.Location);
+
+					/*GEngine->AddOnScreenDebugMessage(11, DeltaTime, FColor::Yellow, FString::Printf(TEXT("Current Unrotated: %s - Target Unrotated: %s"),
+						*UnrotatedCurLocation.ToString(), *UnrotatedTargetLocation.ToString()));*/
 
 					FVector TLocation = UnrotatedTargetLocation;
 
