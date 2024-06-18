@@ -173,115 +173,124 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		}
 	}
 
-	// We need to impart the velocity of the object that we are holding onto here.
-	FVector Acc = FVector::ZeroVector;
-	Acc += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
-
-	// Calculates velocity if not being controlled by root motion.
-	if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
+	float remainingTime = DeltaSeconds;
+	while ((remainingTime >= MIN_TICK_TIME) && (Iterations < MaxSimulationIterations))
 	{
-		Acc += HandMoveDir * MoveIntensityMultiplier;
-		
-		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+		Iterations++;
+		float timeTick = GetSimulationTimeStep(remainingTime, Iterations);
+		remainingTime -= timeTick;
 
-		FVector SnapArmsVector;
+		// We need to impart the velocity of the object that we are holding onto here.
+		FVector Acc = FVector::ZeroVector;
+		Acc += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
+
+		// Calculates velocity if not being controlled by root motion.
+		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
+		{
+			Acc += HandMoveDir * MoveIntensityMultiplier;
+
+			GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+
+			FVector SnapArmsVector;
+			if (ClimberCharacterOwner)
+			{
+				bool IsArmOutstretched;
+				FVector RootDeltaFixLeftHand = FVector::ZeroVector;
+				FVector RootDeltaFixRightHand = FVector::ZeroVector;
+
+				const FVector BodyOffset = Velocity * timeTick;
+
+				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
+				{
+					const FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
+					FVector ArmVector = ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+					if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
+					{
+						MovementClimbingUtils::UpdateGrabbableObjectVelocity(LeftHandData, timeTick, PrevLeftHandObjectLocation, RootDeltaFixLeftHand, this);
+					}
+					else
+					{
+						//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
+					}
+				}
+				if (ClimberCharacterOwner->RightHandData.IsGrabbing)
+				{
+					const FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
+					FVector ArmVector = ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+					if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
+					{
+						MovementClimbingUtils::UpdateGrabbableObjectVelocity(RightHandData, timeTick, PrevRightHandObjectLocation, RootDeltaFixRightHand, this);
+					}
+					else
+					{
+						//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
+					}
+				}
+
+
+				// Snapping Root back to a acceptable shoulder distance from the hand.
+				// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
+				SnapArmsVector = RootDeltaFixLeftHand + RootDeltaFixRightHand;
+
+				if (!SnapArmsVector.IsZero())
+				{
+					const FVector AccelWithoutArmStretch = Acceleration;
+					Acc += SnapArmsVector * ArmStretchIntensityMultiplier;
+					GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+						SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+				}
+			}
+
+			HandMoveDir = FVector::ZeroVector;
+			//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
+			Velocity += Acc * timeTick; //* DampingScale;
+
+			// Apply friction
+			Velocity = Velocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
+
+			// Debug
+			//const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
+			//DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
+		}
+
+		ApplyRootMotionToVelocity(timeTick);
+
+		bJustTeleported = false;
+
+		FVector OldLocation = UpdatedComponent->GetComponentLocation();
+		const FVector Delta = Velocity * timeTick;
+
+		// The actual movement.
+		// We can try to move the ClimbingCollider before, and check for collisions then.
+		// Just set Sweep to false
+		FHitResult Hit(1.f);
+		SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), true, Hit);
+
+		// If Hit.Time >= 1.f, didn't hit anything.
+		if (Hit.Time < 1.f)
+		{
+			// Handles blocking/physics interaction.
+			HandleImpact(Hit, timeTick, Delta);
+			// Slides along collision. Specially important for climbing to feel good.
+			SlideAlongSurface(Delta, (1.f - Hit.Time), Hit.Normal, Hit, true);
+		}
+
 		if (ClimberCharacterOwner)
 		{
-			bool IsArmOutstretched;
-			FVector RootDeltaFixLeftHand = FVector::ZeroVector;
-			FVector RootDeltaFixRightHand = FVector::ZeroVector;
-
-			const FVector BodyOffset = Velocity * DeltaSeconds;
-
-			if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
+			if (!ClimberCharacterOwner->IsGrabbing())
 			{
-				const FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
-				FVector ArmVector = ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
-				if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
-				{
-					MovementClimbingUtils::UpdateGrabbableObjectVelocity(LeftHandData, DeltaSeconds, PrevLeftHandObjectLocation, RootDeltaFixLeftHand, this);
-				}
-				else
-				{
-					//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
-				}
-			}
-			if (ClimberCharacterOwner->RightHandData.IsGrabbing)
-			{
-				const FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
-				FVector ArmVector = ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
-				if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
-				{
-					MovementClimbingUtils::UpdateGrabbableObjectVelocity(RightHandData, DeltaSeconds, PrevRightHandObjectLocation, RootDeltaFixRightHand, this);
-				}
-				else
-				{
-					//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
-				}
-			}
-
-
-			// Snapping Root back to a acceptable shoulder distance from the hand.
-			// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
-			SnapArmsVector = RootDeltaFixLeftHand + RootDeltaFixRightHand;
-
-			if (!SnapArmsVector.IsZero())
-			{
-				const FVector AccelWithoutArmStretch = Acceleration;
-				Acc += SnapArmsVector * ArmStretchIntensityMultiplier;
-				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"), 
-					SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+				SetMovementMode(EMovementMode::MOVE_Falling);
+				//StartNewPhysics(timeTick, Iterations);
+				//return;
 			}
 		}
 
-		HandMoveDir = FVector::ZeroVector;
-		//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
-		Velocity += Acc * DeltaSeconds; //* DampingScale;
-
-		// Apply friction
-		Velocity = Velocity * (1.f - FMath::Min(WallFriction * DeltaSeconds, 1.f));
-
-		// Debug
-		//const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
-		//DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
+		//// Velocity based on distance traveled.
+		//if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
+		//{
+		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / timeTick;
+		//}
 	}
-
-	ApplyRootMotionToVelocity(DeltaSeconds);
-
-	Iterations++;
-	bJustTeleported = false;
-
-	FVector OldLocation = UpdatedComponent->GetComponentLocation();
-	const FVector Delta = Velocity * DeltaSeconds;
-
-	// The actual movement.
-	FHitResult Hit(1.f);
-	SafeMoveUpdatedComponent(Delta, UpdatedComponent->GetComponentQuat(), true, Hit);
-
-	// If Hit.Time >= 1.f, didn't hit anything.
-	if (Hit.Time < 1.f)
-	{
-		// Handles blocking/physics interaction.
-		HandleImpact(Hit, DeltaSeconds, Delta);
-		// Slides along collision. Specially important for climbing to feel good.
-		SlideAlongSurface(Delta, (1.f - Hit.Time), Hit.Normal, Hit, true);
-	}
-
-	if (ClimberCharacterOwner)
-	{
-		if (!ClimberCharacterOwner->IsGrabbing())
-		{
-			SetMovementMode(EMovementMode::MOVE_Falling);
-			//StartNewPhysics(DeltaSeconds, Iterations);
-			//return;
-		}
-	}
-
-	//// Velocity based on distance traveled.
-	//if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
-	//{
-		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / DeltaSeconds;
-	//}
 }
 
 bool UClimberCharacterMovementComponent::IsClimbing() const
