@@ -57,7 +57,10 @@ public:
 	float BrakingDecelerationClimbing;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Physics Objects")
-	float ForceAppliedToPhysicsObjectMultiplier = 5.f;
+	float ForceDampingAppliedToPhysicsObjectMultiplier = 5.f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Physics Objects")
+	bool UseImpulseOnPhysicsObjects = false;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;

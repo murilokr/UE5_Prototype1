@@ -20,19 +20,21 @@ namespace MovementClimbingUtils
 		return false;
 	}
 
+	// TODO: Add Substepping.
 	void UpdateGrabbableObjectVelocity(const FHandsContextData& HandData, float DeltaSeconds, FVector& PrevHandObjectLocation, FVector& ArmFixVector, UClimberCharacterMovementComponent* ClimberCMC)
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
 		{
 			UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get();
 
+			const FTransform GrabObjectLocalToWorld = GrabObject->GetSocketTransform(HandData.HitResult.BoneName);
 			const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
 			const FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation;
 			PrevHandObjectLocation = GrabObjectLocation;
 
 			// Calculate Force to add to grabbed object.
 			// We start with player gravity
-			FVector ForceToAddToObject = ClimberCMC->Mass * ClimberCMC->Velocity;
+			FVector ForceToAddToObject;// = -ClimberCMC->Velocity; //* ClimberCMC->Mass;
 
 			// -ArmFixVector is the distance we want to move it, DeltaSeconds is the amount of time needed, and we have the initial velocity
 			// So we can calculate the actual force needed to move it towards ArmFixVector
@@ -48,19 +50,26 @@ namespace MovementClimbingUtils
 
 			// Then the final Force will be
 			// F = m . (2.(S-u.dt)) / dt2
-			ForceToAddToObject += Acceleration * GrabObject->GetMass();//ClimberCMC->Mass;
-			ForceToAddToObject *= ClimberCMC->ForceAppliedToPhysicsObjectMultiplier; // This is acting more like a damp/drag, which is fine.
+			ForceToAddToObject += Acceleration;// *(GrabObject->GetMass() + ClimberCMC->Mass);
+			ForceToAddToObject = ForceToAddToObject * (1.f - FMath::Min(ClimberCMC->ForceDampingAppliedToPhysicsObjectMultiplier * DeltaSeconds, 1.f));
 
-			// TODO: We should find a way to damp the force when both the player and the object are falling.
-
-			const FTransform GrabObjectLocalToWorld = GrabObject->GetSocketTransform(HandData.HitResult.BoneName);
-			const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
-			GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
+			if (!ClimberCMC->UseImpulseOnPhysicsObjects)
+			{
+				//ForceToAddToObject = ForceToAddToObject / DeltaSeconds; // Impulse to Force (if Impulse was multiplied by DeltaSeconds internally)
+				const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
+				GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitResult.BoneName);
+			}
+			else
+			{
+				const FVector ImpulseToAddToObject = ForceToAddToObject * DeltaSeconds; // Force to Impulse
+				GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation), HandData.HitResult.BoneName);
+			}
 
 			// Debugs
 			const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
 			DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
-			DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + GrabObject->ComponentVelocity, 1.5f, FColor::Emerald, false, 0.25f, 0, 0.5f);
+			DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
+			DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
 
 			const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
 			if (GrabObjectVelocitySize > 100.f)
@@ -187,7 +196,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 			{
 				const FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
-				ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+				FVector ArmVector = ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
 				if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
 				{
 					MovementClimbingUtils::UpdateGrabbableObjectVelocity(LeftHandData, DeltaSeconds, PrevLeftHandObjectLocation, RootDeltaFixLeftHand, this);
@@ -200,7 +209,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 			{
 				const FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
-				ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+				FVector ArmVector = ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
 				if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
 				{
 					MovementClimbingUtils::UpdateGrabbableObjectVelocity(RightHandData, DeltaSeconds, PrevRightHandObjectLocation, RootDeltaFixRightHand, this);
@@ -297,6 +306,11 @@ void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData
 	if (UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get())
 	{
 		PrevHandObjectLocation = GrabObject->GetComponentLocation();
+
+		if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
+		{
+			GrabObject->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Ignore);
+		}
 	}
 }
 
@@ -305,4 +319,12 @@ void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& Ha
 	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 
 	PrevHandObjectLocation = FVector::ZeroVector;
+
+	if (UPrimitiveComponent* GrabObject = HandData.HitResult.Component.Get())
+	{
+		if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
+		{
+			GrabObject->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Block);
+		}
+	}
 }
