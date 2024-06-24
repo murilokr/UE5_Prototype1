@@ -1,0 +1,89 @@
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Front", 1
+
+;_ft
+Zoom 1.0
+CamH 18
+CamP 0
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45
+
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Left", 1
+
+;_lf
+Zoom 1.0
+CamH 108
+CamP 0
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45
+
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Up", 1
+
+;_up
+Zoom 1.0
+CamH 288
+CamP 90
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45
+
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Back", 1
+
+;_bk
+Zoom 1.0
+CamH 198
+CamP 0
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45
+
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Right", 1
+
+;_rt
+Zoom 1.0
+CamH 288
+CamP 0
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45
+
+initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Down", 1
+
+;_dn
+Zoom 1.0
+CamH 288
+CamP -90
+CamB 0
+SunDir 22,3
+frend
+SunDir 22,15
+frend
+SunDir 22,30
+frend
+SunDir 22,45

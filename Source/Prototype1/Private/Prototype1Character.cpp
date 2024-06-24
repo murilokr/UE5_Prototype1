@@ -65,6 +65,13 @@ void APrototype1Character::BeginPlay()
 	// Call the base class  
 	Super::BeginPlay();
 
+	// Workaround to get extra colliders to work with CMC. 
+	// We need to set CapsuleCollider "Simulate Physics" to true in the asset, and then set it to false on BeginPlay.
+	// Don't know why it works, but it does. 
+	// The other possible solution would be to override the SafeMoveUpdatedComponent for our custom CMC, to consider
+	// the extra colliders instead of only the default CapsuleCollider.
+	GetCapsuleComponent()->SetSimulatePhysics(false);
+
 	RightHandData.HandIndex = 0;
 	LeftHandData.HandIndex = 1;
 
@@ -227,17 +234,17 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
 
 	/** GrabRot relative to HandLocation */
-	DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
+	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
 
 	/** HandLocation */
-	DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.0f);
+	//DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.0f);
 
 	/** HandNormal pointing outwards from HandLocation */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
 
 	/** Arrow pointing from HandLocation to MoveDir */
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.5f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.5f);
 
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
 
@@ -417,18 +424,18 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 	{
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
+		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
 
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
+		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
 		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
+		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
 
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
-		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
 	}
 
 	return OutArmVector;
