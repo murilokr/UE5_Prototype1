@@ -1,6 +1,8 @@
 from PIL import Image, ImageOps
 import os
 
+output_folder = '../Output/'
+
 def paste_image(input_image, output_image, position, flip_horizontal=False, rotate_180=False):
     # Flip horizontally if specified
     if flip_horizontal:
@@ -32,7 +34,7 @@ def process_images(layer_image_paths, individual_image_paths, layer_position, in
         
         # Iterate over layer image paths and paste onto temp_layer_image
         for i, image_path in enumerate(layer_image_paths):
-            input_image = Image.open(image_path)
+            input_image = Image.open(output_folder + image_path)
             position = ((512 * i), 0) # (0, 0)
             paste_image(input_image, temp_layer_image, position, flip_horizontal=True)
         
@@ -43,7 +45,7 @@ def process_images(layer_image_paths, individual_image_paths, layer_position, in
     if individual_image_paths:
         # Iterate over individual image paths and paste onto output_image
         for i, image_path in enumerate(individual_image_paths):
-            input_image = Image.open(image_path)
+            input_image = Image.open(output_folder + image_path)
             position = individual_positions[i]
             
             # Flip horizontally and rotate 180 degrees before pasting
@@ -54,12 +56,12 @@ def process_images(layer_image_paths, individual_image_paths, layer_position, in
 
 # Example usage:
 if __name__ == "__main__":
-    layer_image_paths = ['Output/Sky_Back0001.bmp', 'Output/Sky_Left0001.bmp', 'Output/Sky_Front0001.bmp', 'Output/Sky_Right0001.bmp']
+    layer_image_paths = ['Sky_Back0001.bmp', 'Sky_Left0001.bmp', 'Sky_Front0001.bmp', 'Sky_Right0001.bmp']
     layer_position = (0, 768)
     
-    individual_image_paths = ['Output/Sky_Up0001.bmp', 'Output/Sky_Down0001.bmp']
+    individual_image_paths = ['Sky_Up0001.bmp', 'Sky_Down0001.bmp']
     individual_positions = [(512, 256), (512, 1280)]
     
-    output_image_path = 'Output/output_image.png'
+    output_image_path = '../Textures/output_image.png'
     
     process_images(layer_image_paths, individual_image_paths, layer_position, individual_positions, output_image_path)
