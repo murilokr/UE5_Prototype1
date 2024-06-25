@@ -128,6 +128,8 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 			//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.0f);
 		}
 	}
+
+	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
 }
 
 void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity)
