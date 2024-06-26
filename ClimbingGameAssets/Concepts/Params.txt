@@ -1,0 +1,7 @@
+Prompt: We're on a mountain side, there's a signal tower off in a distant mountain, with it's red lights flashing. The skies are clear and the sun is shining above. Closer to us is a weather station, with a giant and really tall sattelite dish. Close-by are smaller industrial sheds used to monitor the station, they are black or grey in color. The whole station perimeter is walled off with a dense and high metal fence. In the distance a giant mountain looms. The station is isolated between mountains
+
+Seed: 1989598344981513
+
+Kids Illustration: -0.4
+Toon & Anime: 0.7
+Everything else: 0.0
