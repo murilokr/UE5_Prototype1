@@ -1,17 +1,53 @@
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Front", 1
 
 ;_ft
+;1m is 0,067
 Zoom 1.0
 CamH 18
 CamP 0
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
 
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Left", 1
 
@@ -20,13 +56,48 @@ Zoom 1.0
 CamH 108
 CamP 0
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
 
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Up", 1
 
@@ -35,13 +106,48 @@ Zoom 1.0
 CamH 288
 CamP 90
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
 
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Back", 1
 
@@ -50,13 +156,48 @@ Zoom 1.0
 CamH 198
 CamP 0
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
 
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Right", 1
 
@@ -65,13 +206,48 @@ Zoom 1.0
 CamH 288
 CamP 0
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
 
 initanim "C:\Users\murilo.rivabem\Documents\ClimbingGameAssets\Output\Sky_Down", 1
 
@@ -80,10 +256,45 @@ Zoom 1.0
 CamH 288
 CamP -90
 CamB 0
-SunDir 22,3
+CamPos 198, 270, 16.533
 frend
-SunDir 22,15
+CamPos 198, 270, 16.6
 frend
-SunDir 22,30
+CamPos 198, 270, 16.667
 frend
-SunDir 22,45
+CamPos 198, 270, 16.733
+frend
+CamPos 198, 270, 16.800
+frend
+CamPos 198, 270, 16.867
+frend
+CamPos 198, 270, 16.933
+frend
+CamPos 198, 270, 17
+frend
+CamPos 198, 270, 17.067
+frend
+CamPos 198, 270, 17.133
+frend
+CamPos 198, 270, 17.200
+frend
+CamPos 198, 270, 17.267
+frend
+CamPos 198, 270, 17.333
+frend
+CamPos 198, 270, 17.400
+frend
+CamPos 198, 270, 17.467
+frend
+CamPos 198, 270, 17.533
+frend
+CamPos 198, 270, 17.600
+frend
+CamPos 198, 270, 17.667
+frend
+CamPos 198, 270, 17.733
+frend
+CamPos 198, 270, 17.800
+frend
+CamPos 198, 270, 17.867
+frend
