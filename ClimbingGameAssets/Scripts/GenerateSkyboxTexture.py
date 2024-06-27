@@ -3,6 +3,8 @@ import os
 
 output_folder = '../Output/'
 texture_name = "Sky_MountainSide_Alt_"
+initial_frame = 1
+last_frame = 21
 
 
 def paste_image(input_image, output_image, position, flip_horizontal=False, rotate_180=False):
@@ -67,8 +69,8 @@ if __name__ == "__main__":
     individual_skybox_faces = ["Up", "Down"]
     individual_positions = [(512, 256), (512, 1280)]
     
-    frames = ["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021"]
-    
-    for frame_number in frames:
+    frames = []
+    for i in range(initial_frame, last_frame + 1):
+        frame_number = f"{i:04}"
         output_image_path = "../Textures/" + texture_name + frame_number + ".png"
         process_images(skybox_layer_faces, individual_skybox_faces, layer_position, individual_positions, frame_number, output_image_path)
