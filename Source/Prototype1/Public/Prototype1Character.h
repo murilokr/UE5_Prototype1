@@ -153,6 +153,10 @@ public:
 	UInputAction* GrabActionL;
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* GrabActionR;
+
+	/** Game Feel Improvements */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay, meta = (AllowPrivateAccess = "true"))
+	float CoyoteTimeDuration = 0.275f;
 	
 	APrototype1Character(const FObjectInitializer& ObjectInitializer);
 
@@ -201,6 +205,12 @@ public:
 
 	void ReleaseHand(const FHandsContextData& HandData);
 	/** End of Hand Utility Functions */
+
+	UFUNCTION(BlueprintCallable)
+	void StartCoyoteTime();
+
+	UFUNCTION(BlueprintCallable)
+	void StopCoyoteTime();
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")
 	FHandsContextData LeftHandData;
@@ -289,6 +299,8 @@ protected:
 
 	bool CanUsePitch(const FRotator& Delta, float LookAxisValue) const;
 
+	virtual bool CanJumpInternal_Implementation() const override;
+
 	/** Called for grabbing input Right */
 	void GrabR(const FInputActionValue& Value);
 
@@ -322,6 +334,8 @@ protected:
 private:
 
 	FRotator FreeLookControlRotation;
+
+	float CoyoteTimer = 0.f;
 
 	// Cached "heavy" calculations for perf.
 	float ArmsLengthUnitsSquared;

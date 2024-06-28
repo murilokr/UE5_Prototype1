@@ -133,6 +133,12 @@ void APrototype1Character::Tick(float DeltaSeconds)
 
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
+
+	if (CoyoteTimer > 0.f)
+	{
+		CoyoteTimer -= DeltaSeconds;
+		CoyoteTimer = FMath::Max(CoyoteTimer, 0.f);
+	}
 }
 
 // TODO: Make W/S move forward and backwards a little in relation to the arms when grabbed onto something.
@@ -157,6 +163,18 @@ void APrototype1Character::ReleaseHand(int HandIndex)
 void APrototype1Character::ReleaseHand(const FHandsContextData& HandData)
 {
 	StopGrabbing(HandData.HandIndex);
+}
+
+void APrototype1Character::StartCoyoteTime()
+{
+	CoyoteTimer = CoyoteTimeDuration;
+	//GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Yellow, TEXT("Start Coyote Time"));
+}
+
+void APrototype1Character::StopCoyoteTime()
+{
+	CoyoteTimer = 0.f;
+	//GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Red, TEXT("Stopping Coyote Time"));
 }
 
 void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
@@ -533,6 +551,16 @@ bool APrototype1Character::CanUsePitch(const FRotator& Delta, float LookAxisValu
 	}
 
 	return true;
+}
+
+bool APrototype1Character::CanJumpInternal_Implementation() const
+{
+	const bool CharacterCanJump = Super::CanJumpInternal_Implementation();
+	const bool IsCoyoteTime = CoyoteTimer > 0.f;
+
+	//GEngine->AddOnScreenDebugMessage(22, 2.5f, FColor::Purple, FString::Printf(TEXT("CharacterCanJump: %i - IsCoyoteTimer: %i (%f)"), CharacterCanJump, IsCoyoteTime, CoyoteTimer));
+
+	return CharacterCanJump || IsCoyoteTime;
 }
 
 void APrototype1Character::GrabR(const FInputActionValue& Value)

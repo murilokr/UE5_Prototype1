@@ -128,6 +128,19 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 		{
 			//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.0f);
 		}
+
+		const bool bWasJumping = ClimberCharacterOwner->bWasJumping || ClimberCharacterOwner->bPressedJump;
+		if (MovementMode == MOVE_Falling)
+		{
+			if (!bWasJumping && !bWasClimbing)
+			{
+				ClimberCharacterOwner->StartCoyoteTime();
+			}
+			else
+			{
+				ClimberCharacterOwner->StopCoyoteTime();
+			}
+		}
 	}
 
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
@@ -143,6 +156,15 @@ void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, c
 		{
 			HandMoveDir = FVector::ZeroVector;
 			SetMovementMode(EMovementMode::MOVE_Custom, ECustomMovementMode::CMOVE_Climbing);
+		}
+
+		const bool bWasJumping = ClimberCharacterOwner->bWasJumping || ClimberCharacterOwner->bPressedJump;
+		if (MovementMode == MOVE_Falling)
+		{
+			if (bWasJumping)
+			{
+				ClimberCharacterOwner->StopCoyoteTime();
+			}
 		}
 	}
 }
