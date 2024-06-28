@@ -65,9 +65,6 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	float GrabPositionT;
 
-	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
-	FHitResult HitResult;
-
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector LocalHandLocation;
 
@@ -81,6 +78,16 @@ struct FHandsContextData
 
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector LocalHandNormal;
+
+	// Hit Result Stuff
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	TObjectPtr<AActor> HitActor;
+
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	TObjectPtr<UPrimitiveComponent> HitComponent;
+
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	FName HitBoneName;
 
 	// Hand Location
 	FVector GetHandLocation() const;

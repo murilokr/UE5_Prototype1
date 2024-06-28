@@ -298,20 +298,22 @@ void APrototype1Character::Grab(int HandIndex)
 	SetElbowSetup(HandIndex, ESETUP_Climbing);
 
 	HandData.IsGrabbing = true;
-	HandData.HitResult = HitResult;
+	HandData.HitActor = HitResult.GetActor();
+	HandData.HitComponent = HitResult.GetComponent();
+	HandData.HitBoneName = HitResult.BoneName;
 
 	// Calculate GrabPositionT
-	HandData.GrabPositionT = 0.0f;
-	const FVector PositionDir = HitResult.Location - TraceStart;
-	if ((TraceDir | PositionDir) >= 0.0f)
-	{
-		// HitResult.Location is inline with TraceDir.
-		HandData.GrabPositionT = FMath::Clamp(PositionDir.SquaredLength() / TraceLength, 0.0f, 1.0f);
-	}
+	//HandData.GrabPositionT = 0.0f;
+	//const FVector PositionDir = HitResult.Location - TraceStart;
+	//if ((TraceDir | PositionDir) >= 0.0f)
+	//{
+	//	// HitResult.Location is inline with TraceDir.
+	//	HandData.GrabPositionT = FMath::Clamp(PositionDir.SquaredLength() / TraceLength, 0.0f, 1.0f);
+	//}
 
-	const FTransform HitBoneWorldToLocalTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName).Inverse();
-	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.TransformPosition(HitResult.Location);
-	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.TransformVectorNoScale(HitResult.Normal);
+	FTransform HitBoneWorldToLocalTransform = HitResult.GetActor()->GetActorTransform(); //HitResult.Component->GetSocketTransform(HitResult.BoneName).Inverse();
+	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(HitResult.Location);
+	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.InverseTransformVector(HitResult.Normal);
 
 	ClimberMovementComponent->SetHandGrabbing(HandData);
 
@@ -555,26 +557,24 @@ void APrototype1Character::StopGrabL(const FInputActionValue& Value)
 
 FVector FHandsContextData::GetHandLocation() const
 {
-	if (!HitResult.Component.IsValid())
+	if (!HitActor)
 	{
 		return FVector();
 	}
 
-	const FTransform HitBoneLocalToWorldTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName);
-
+	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
 	return HitBoneLocalToWorldTransform.TransformPosition(LocalHandLocation);
 }
 
 FVector FHandsContextData::GetHandNormal() const
 {
-	if (!HitResult.Component.IsValid())
+	if (!HitActor)
 	{
 		return FVector();
 	}
 
-	const FTransform HitBoneLocalToWorldTransform = HitResult.Component->GetSocketTransform(HitResult.BoneName);
-
-	return HitBoneLocalToWorldTransform.TransformVectorNoScale(LocalHandNormal);
+	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
+	return HitBoneLocalToWorldTransform.TransformVector(LocalHandNormal);
 }
 
 FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const
