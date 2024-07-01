@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Prototype1Character.h"
 #include "Prototype1Projectile.h"
@@ -307,6 +307,8 @@ void APrototype1Character::Grab(int HandIndex)
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
 	//DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
 
+	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 5.0f, 0, 1.0f);
+
 	// Nothing was hit.
 	if (!HitResult.bBlockingHit)
 	{
@@ -410,14 +412,15 @@ const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
 	return HandData;
 }
 
-FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const
+FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const
 {
-	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched, RootDeltaFix);
+	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched, RootDeltaFix, HandSlipVector);
 }
 
-FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix) const
+FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const
 {
 	RootDeltaFix = FVector::ZeroVector;
+	HandSlipVector = FVector::ZeroVector;
 
 	const FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector HandNormal = HandData.GetHandNormal();
@@ -434,7 +437,10 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 	const float StretchMultiplier = FMath::Max(1 + (ArmStretchMultiplierCurve->GetFloatValue(AngleNormalized) * (ArmStretchMultiplier - 1)), 1.0f);
 
 	// Check if arm is stretched with added multiplier.
-	OutIsOverstretched = OutArmVector.SquaredLength() >= FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	const float RelaxedArmMaxLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	const float ArmCurrentLength = OutArmVector.SizeSquared();
+	const float StretchRatio = FMath::Max((ArmCurrentLength - RelaxedArmMaxLength) / RelaxedArmMaxLength, 0.0f);
+	OutIsOverstretched = ArmCurrentLength >= RelaxedArmMaxLength;
 
 	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
 		Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
@@ -456,9 +462,72 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+
+
+		// Now we calculate the SlipVector.
+		if (Angle < 0.0f && StretchRatio >= MinStretchRatioToSlip)
+		{
+			GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Emerald, FString::Printf(TEXT("We are slipping the hand with stretch ratio of %f"),
+				StretchRatio));
+
+			// Maybe we can adjust the Hand here, and AFTER we calculate the RootDeltaFix (so we move hand first, and snap arms to a safe position after)
+
+			HandSlipVector = FVector::VectorPlaneProject(OutArmVector, HandNormal) * StretchRatio;
+			DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Blue, false, 0.25f, 0, 0.5f);
+		}
 	}
 
 	return OutArmVector;
+}
+
+void APrototype1Character::SlipHand(FHandsContextData& HandData, const FVector& HandSlipVector, float DeltaSeconds)
+{
+	//FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform();
+	//const FVector HandSlipVectorLocal = HandLocalToWorldTransform.InverseTransformPositionNoScale(HandSlipVector); // No scale? Makes sense, I think 🤔
+	const float HandPhysicalHeight = 9.635022f;
+	const float HandPhysicalRadius = 6.519027f;
+
+	const FVector HandLocation = HandData.GetHandLocation();
+	const FQuat HandRotation = GetHandRotation(HandData).Quaternion();
+
+	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.025f, 0, 1.0f);
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
+	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
+	TArray<FHitResult> HitResults;
+	GetWorld()->SweepMultiByChannel(HitResults, HandLocation + (HandSlipVector * DeltaSeconds), HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	//UKismetSystemLibrary::SphereTraceMulti(GetWorld(), HandLocation, HandLocation + HandSlipVector, HandPhysicalSize, )
+
+	FHitResult BestHitResult;
+	bool bHadValidBlockingHit = false;
+	for (const FHitResult& HR : HitResults)
+	{
+		if (HR.bBlockingHit)
+		{
+			if (HR.GetActor() == HandData.HitActor)
+			{
+				BestHitResult = HR;
+				bHadValidBlockingHit = true;
+				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 0.025f, 0, 1.0f);
+				DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 0.025f, 0, 1.0f);
+				break;
+			}
+		}
+	}
+
+	if (bHadValidBlockingHit)
+	{
+		FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
+		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(BestHitResult.ImpactPoint);
+		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(BestHitResult.ImpactNormal);
+	}
+	else
+	{
+		DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 0.025f, 0, 1.0f);
+	}
 }
 
 FVector APrototype1Character::GetHandLocation(int HandIndex) const
@@ -501,7 +570,11 @@ FVector APrototype1Character::GetHandNormal(const FHandsContextData& HandData) c
 
 FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 {
-	FHandsContextData HandData = GetHandData(HandIndex);
+	return GetHandRotation(GetHandData(HandIndex));
+}
+
+FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData) const
+{
 	if (!HandData.IsGrabbing)
 	{
 		const FTransform MeshToWorld = Mesh1P->GetComponentTransform();
@@ -511,7 +584,7 @@ FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 
 	// Flip RightHand only.
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
-	return HandData.GetHandRotation(HandIndex == 0, HandRelativeUp);
+	return HandData.GetHandRotation(HandData.HandIndex == 0, HandRelativeUp);
 }
 
 bool APrototype1Character::IsGrabbing() const
