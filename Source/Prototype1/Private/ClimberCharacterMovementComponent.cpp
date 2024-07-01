@@ -220,15 +220,16 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner)
 			{
 				bool IsArmOutstretched;
-				FVector RootDeltaFixLeftHand = FVector::ZeroVector;
-				FVector RootDeltaFixRightHand = FVector::ZeroVector;
+				FVector LeftHandSlipVector, RightHandSlipVector;
+				FVector RootDeltaFixLeftHand, RootDeltaFixRightHand;
 
 				const FVector BodyOffset = Velocity * timeTick;
 
 				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 				{
-					const FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
-					FVector ArmVector = ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
+					FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
+					FVector ArmVector = ClimberCharacterOwner->GetArmVector(LeftHandData, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand, LeftHandSlipVector);
+					ClimberCharacterOwner->SlipHand(LeftHandData, LeftHandSlipVector, DeltaSeconds);
 					if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
 					{
 						MovementClimbingUtils::UpdateGrabbableObjectVelocity(LeftHandData, timeTick, PrevLeftHandObjectLocation, RootDeltaFixLeftHand, this);
@@ -240,8 +241,9 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				}
 				if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 				{
-					const FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
-					FVector ArmVector = ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
+					FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
+					FVector ArmVector = ClimberCharacterOwner->GetArmVector(RightHandData, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand, RightHandSlipVector);
+					ClimberCharacterOwner->SlipHand(RightHandData, RightHandSlipVector, DeltaSeconds);
 					if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
 					{
 						MovementClimbingUtils::UpdateGrabbableObjectVelocity(RightHandData, timeTick, PrevRightHandObjectLocation, RootDeltaFixRightHand, this);
