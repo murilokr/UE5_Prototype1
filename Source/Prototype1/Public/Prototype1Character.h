@@ -176,10 +176,10 @@ public:
 	const FHandsContextData& GetHandData(int HandIndex) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const;
-	FVector GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const;
+	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth = 0);
+	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth = 0);
 
-	void SlipHand(FHandsContextData& HandData, const FVector& HandSlipVector, float DeltaSeconds);
+	bool TryToSlipHand(FHandsContextData& HandData, const FVector& ArmVector, float ArmMaxRelaxedLength, float DeltaSeconds);
 
 	UFUNCTION(BlueprintPure)
 	FVector GetHandLocation(int HandIndex) const;
@@ -242,7 +242,7 @@ public:
 	TObjectPtr<UCurveFloat> ArmStretchMultiplierCurve;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "2", ClampMin = "0", ClampMax = "2"))
-	float MinStretchRatioToSlip = 0.15f;
+	float MinStretchRatioToSlip = 0.87f;
 
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
