@@ -412,19 +412,23 @@ const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
 	return HandData;
 }
 
-FVector APrototype1Character::GetArmVector(int HandIndex, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const
+FVector APrototype1Character::CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth)
 {
-	return GetArmVector(GetHandData(HandIndex), BodyOffset, OutIsOverstretched, RootDeltaFix, HandSlipVector);
+	return CalculateArmConstraint(GetMutableHandData(HandIndex), DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix, Depth);
 }
 
-FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& HandSlipVector) const
+FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth)
 {
 	RootDeltaFix = FVector::ZeroVector;
-	HandSlipVector = FVector::ZeroVector;
+	if (Depth >= 5)
+	{
+		UE_LOG(LogTemp, Warning, TEXT("CalculateArmConstraint recursively called more than 5 times."));
+		return RootDeltaFix;
+	}
 
 	const FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector HandNormal = HandData.GetHandNormal();
-	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal);
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
 	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
 
@@ -437,23 +441,29 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 	const float StretchMultiplier = FMath::Max(1 + (ArmStretchMultiplierCurve->GetFloatValue(AngleNormalized) * (ArmStretchMultiplier - 1)), 1.0f);
 
 	// Check if arm is stretched with added multiplier.
-	const float RelaxedArmMaxLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
-	const float ArmCurrentLength = OutArmVector.SizeSquared();
-	const float StretchRatio = FMath::Max((ArmCurrentLength - RelaxedArmMaxLength) / RelaxedArmMaxLength, 0.0f);
-	OutIsOverstretched = ArmCurrentLength >= RelaxedArmMaxLength;
+	const float ArmMaxRelaxedLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	float ArmCurrentLength = OutArmVector.SizeSquared();
+	const float StretchRatio = FMath::Max((ArmCurrentLength - ArmMaxRelaxedLength) / ArmMaxRelaxedLength, 0.0f);
+	OutIsOverstretched = ArmCurrentLength >= ArmMaxRelaxedLength;
 
-	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
-		Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
+	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Stretch Ratio: %f"), StretchRatio));
+	//GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
+		//Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
 
 	// If Arm is Overstretched, then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (OutIsOverstretched)
 	{
+		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
+		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
+
+		if (TryToSlipHand(HandData, FixedArmVector, ArmMaxRelaxedLength, DeltaSeconds))
+		{
+			return CalculateArmConstraint(HandData, DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix, Depth + 1);
+		}
+
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
-
-		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
-		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
 		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
@@ -462,44 +472,50 @@ FVector APrototype1Character::GetArmVector(const FHandsContextData& HandData, co
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
-
-
-		// Now we calculate the SlipVector.
-		if (Angle < 0.0f && StretchRatio >= MinStretchRatioToSlip)
-		{
-			GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Emerald, FString::Printf(TEXT("We are slipping the hand with stretch ratio of %f"),
-				StretchRatio));
-
-			// Maybe we can adjust the Hand here, and AFTER we calculate the RootDeltaFix (so we move hand first, and snap arms to a safe position after)
-
-			HandSlipVector = FVector::VectorPlaneProject(OutArmVector, HandNormal) * StretchRatio;
-			DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Blue, false, 0.25f, 0, 0.5f);
-		}
 	}
 
 	return OutArmVector;
 }
 
-void APrototype1Character::SlipHand(FHandsContextData& HandData, const FVector& HandSlipVector, float DeltaSeconds)
+bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVector& ArmVector, float SlipRatio, float DeltaSeconds)
 {
-	//FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform();
-	//const FVector HandSlipVectorLocal = HandLocalToWorldTransform.InverseTransformPositionNoScale(HandSlipVector); // No scale? Makes sense, I think 🤔
-	const float HandPhysicalHeight = 9.635022f;
-	const float HandPhysicalRadius = 6.519027f;
-
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FQuat HandRotation = GetHandRotation(HandData).Quaternion();
+	const FVector HandNormal = HandData.GetHandNormal();
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
+	const FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal).GetSafeNormal();
+
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
+
+	const bool bShouldSlip = SlipRatio >= MinStretchRatioToSlip;
+	if (!bShouldSlip)
+	{
+		return false;
+	}
+
+	const FVector HandSlipVector = -HandRelativeUp * (1 + SlipRatio);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, (bShouldSlip) ? FColor::Red : FColor::Green, false, 0.25f, 0, 0.5f);
+	
+
+	GEngine->AddOnScreenDebugMessage(17, 0.25f, FColor::Yellow, TEXT("SLIPPING!"));
+	GEngine->AddOnScreenDebugMessage(15, 0.1f, FColor::Emerald, FString::Printf(TEXT("Slip Vector Length: %f - Arm Vector Length: %f (%f)"),
+		HandSlipVector.Size(), ProjectedArmVector.Size(), ArmVector.Size()));
+	GEngine->AddOnScreenDebugMessage(16, 0.1f, FColor::Emerald, FString::Printf(TEXT("Slip Ratio: %f"), SlipRatio));
+
+	////FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform();
+	////const FVector HandSlipVectorLocal = HandLocalToWorldTransform.InverseTransformPositionNoScale(HandSlipVector); // No scale? Makes sense, I think 🤔
+	const float HandPhysicalHeight = 9.635022f;
+	const float HandPhysicalRadius = 6.519027f;
 
 	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.025f, 0, 1.0f);
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 
-	// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
+	//// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
 	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
 	TArray<FHitResult> HitResults;
 	GetWorld()->SweepMultiByChannel(HitResults, HandLocation + (HandSlipVector * DeltaSeconds), HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
-	//UKismetSystemLibrary::SphereTraceMulti(GetWorld(), HandLocation, HandLocation + HandSlipVector, HandPhysicalSize, )
 
 	FHitResult BestHitResult;
 	bool bHadValidBlockingHit = false;
@@ -523,11 +539,13 @@ void APrototype1Character::SlipHand(FHandsContextData& HandData, const FVector& 
 		FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
 		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(BestHitResult.ImpactPoint);
 		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(BestHitResult.ImpactNormal);
+		return true;
 	}
-	else
-	{
-		DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 0.025f, 0, 1.0f);
-	}
+	
+	DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 0.025f, 0, 1.0f);
+	// Maybe we do an extra check on the stretchratio to see if the hands just let go?
+	// Or maybe we can have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
+	return false;
 }
 
 FVector APrototype1Character::GetHandLocation(int HandIndex) const
