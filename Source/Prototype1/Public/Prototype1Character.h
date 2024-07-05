@@ -176,8 +176,8 @@ public:
 	const FHandsContextData& GetHandData(int HandIndex) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth = 0);
-	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth = 0);
+	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix);
+	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix);
 
 	bool TryToSlipHand(FHandsContextData& HandData, const FVector& ArmVector, float ArmMaxRelaxedLength, float DeltaSeconds);
 

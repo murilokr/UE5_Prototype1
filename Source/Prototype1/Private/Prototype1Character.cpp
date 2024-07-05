@@ -412,19 +412,14 @@ const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
 	return HandData;
 }
 
-FVector APrototype1Character::CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth)
+FVector APrototype1Character::CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix)
 {
-	return CalculateArmConstraint(GetMutableHandData(HandIndex), DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix, Depth);
+	return CalculateArmConstraint(GetMutableHandData(HandIndex), DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix);
 }
 
-FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, int Depth)
+FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix)
 {
 	RootDeltaFix = FVector::ZeroVector;
-	if (Depth >= 5)
-	{
-		UE_LOG(LogTemp, Warning, TEXT("CalculateArmConstraint recursively called more than 5 times."));
-		return RootDeltaFix;
-	}
 
 	const FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector HandNormal = HandData.GetHandNormal();
@@ -456,11 +451,6 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
 		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
-		if (TryToSlipHand(HandData, FixedArmVector, ArmMaxRelaxedLength, DeltaSeconds))
-		{
-			return CalculateArmConstraint(HandData, DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix, Depth + 1);
-		}
-
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
@@ -472,6 +462,8 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+
+		TryToSlipHand(HandData, FixedArmVector, ArmMaxRelaxedLength, DeltaSeconds);
 	}
 
 	return OutArmVector;
@@ -494,7 +486,7 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	}
 
 	const FVector HandSlipVector = -HandRelativeUp * (1 + SlipRatio);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, (bShouldSlip) ? FColor::Red : FColor::Green, false, 0.25f, 0, 0.5f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 0.25f, 0, 0.5f);
 	
 
 	GEngine->AddOnScreenDebugMessage(17, 0.25f, FColor::Yellow, TEXT("SLIPPING!"));
@@ -515,7 +507,7 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	//// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
 	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
 	TArray<FHitResult> HitResults;
-	GetWorld()->SweepMultiByChannel(HitResults, HandLocation + (HandSlipVector * DeltaSeconds), HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	GetWorld()->SweepMultiByChannel(HitResults, HandLocation + HandSlipVector, HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
 
 	FHitResult BestHitResult;
 	bool bHadValidBlockingHit = false;
@@ -536,15 +528,26 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 
 	if (bHadValidBlockingHit)
 	{
+		const FVector MoveDelta = HandLocation + HandSlipVector * DeltaSeconds;
+		FHitResult MoveDeltaHitResult;
+		GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, MoveDelta, MoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+		if (!MoveDeltaHitResult.bBlockingHit)
+		{
+			UE_LOG(LogTemp, Error, TEXT("[APrototype1Character::TryToSlipHand] Something went incredibly wrong here."));
+			GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Red, TEXT("[APrototype1Character::TryToSlipHand] Something went incredibly wrong here."));
+			return false;
+		}
+
 		FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
-		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(BestHitResult.ImpactPoint);
-		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(BestHitResult.ImpactNormal);
+		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(MoveDelta);
+		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
 		return true;
 	}
 	
 	DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 0.025f, 0, 1.0f);
-	// Maybe we do an extra check on the stretchratio to see if the hands just let go?
-	// Or maybe we can have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
+	// TODO:
+	// Maybe do an extra check on the stretchratio to see if the hands just let go?
+	// Or maybe have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
 	return false;
 }
 
