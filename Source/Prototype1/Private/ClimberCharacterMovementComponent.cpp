@@ -294,16 +294,20 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				}
 			}
 
-			HandMoveDir = FVector::ZeroVector;
 			//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
-			Velocity += Acc * timeTick;// +SnapArmsVector; // Try to not have SnapArmsVector be multiplied by timeTick.
+			HandMoveDir = FVector::ZeroVector;
+			const float MaxSpeed = GetMaxSpeed();
+			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
+
+			Velocity += Acc * timeTick;// Try to not have SnapArmsVector be multiplied by timeTick.
+			Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 
 			// Apply friction
 			Velocity = Velocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
 
 			// Debug
-			//const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
-			//DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Velocity, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
+			const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
+			DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + Acceleration, 1.0f, FColor::Emerald, false, 0.25f, 0, 0.5f);
 		}
 
 		ApplyRootMotionToVelocity(timeTick);
