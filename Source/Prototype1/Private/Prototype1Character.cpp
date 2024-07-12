@@ -421,7 +421,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 {
 	RootDeltaFix = FVector::ZeroVector;
 
-	const FVector HandLocation = GetSafeHandLocation(HandData);
+	FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector HandNormal = HandData.GetHandNormal();
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
@@ -451,6 +451,12 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
 		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
+		if (TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds))
+		{
+			HandLocation = GetSafeHandLocation(HandData);
+			// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
+		}
+
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
@@ -462,8 +468,6 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
-
-		TryToSlipHand(HandData, FixedArmVector, ArmMaxRelaxedLength, DeltaSeconds);
 	}
 
 	return OutArmVector;
@@ -486,20 +490,16 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	}
 
 	const FVector HandSlipVector = -HandRelativeUp * (1 + SlipRatio);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 0.25f, 0, 0.5f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 1.25f, 0, 0.5f);
 	
-
-	GEngine->AddOnScreenDebugMessage(17, 0.25f, FColor::Yellow, TEXT("SLIPPING!"));
-	GEngine->AddOnScreenDebugMessage(15, 0.1f, FColor::Emerald, FString::Printf(TEXT("Slip Vector Length: %f - Arm Vector Length: %f (%f)"),
+	GEngine->AddOnScreenDebugMessage(16, 0.5f, FColor::Yellow, TEXT("SLIPPING!"));
+	GEngine->AddOnScreenDebugMessage(17, 0.5f, FColor::Emerald, FString::Printf(TEXT("Slip Vector Length: %f - Arm Vector Length: %f (%f)"),
 		HandSlipVector.Size(), ProjectedArmVector.Size(), ArmVector.Size()));
-	GEngine->AddOnScreenDebugMessage(16, 0.1f, FColor::Emerald, FString::Printf(TEXT("Slip Ratio: %f"), SlipRatio));
 
-	////FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform();
-	////const FVector HandSlipVectorLocal = HandLocalToWorldTransform.InverseTransformPositionNoScale(HandSlipVector); // No scale? Makes sense, I think 🤔
 	const float HandPhysicalHeight = 9.635022f;
 	const float HandPhysicalRadius = 6.519027f;
 
-	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.025f, 0, 1.0f);
+	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 1.25f, 0, 1.0f);
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
@@ -519,8 +519,8 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 			{
 				BestHitResult = HR;
 				bHadValidBlockingHit = true;
-				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 0.025f, 0, 1.0f);
-				DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 0.025f, 0, 1.0f);
+				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 1.25f, 0, 1.0f);
+				DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 1.25f, 0, 1.0f);
 				break;
 			}
 		}
@@ -528,7 +528,7 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 
 	if (bHadValidBlockingHit)
 	{
-		const FVector MoveDelta = HandLocation + HandSlipVector * DeltaSeconds;
+		const FVector MoveDelta = HandLocation + HandSlipVector;
 		FHitResult MoveDeltaHitResult;
 		GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, MoveDelta, MoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
 		if (!MoveDeltaHitResult.bBlockingHit)
@@ -538,13 +538,15 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 			return false;
 		}
 
+		DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 1.25f, 0, 1.0f);
+
 		FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
 		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(MoveDelta);
 		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
 		return true;
 	}
 	
-	DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 0.025f, 0, 1.0f);
+	DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 1.25f, 0, 1.0f);
 	// TODO:
 	// Maybe do an extra check on the stretchratio to see if the hands just let go?
 	// Or maybe have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
