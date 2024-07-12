@@ -610,6 +610,22 @@ FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData
 	return HandData.GetHandRotation(HandData.HandIndex == 0, HandRelativeUp);
 }
 
+FVector APrototype1Character::RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const
+{
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
+	FQuat HandToWorldTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp).Inverse();
+
+	return HandToWorldTransform.RotateVector(WorldRelative);
+}
+
+FVector APrototype1Character::RotateToWorld(const FHandsContextData& HandData, const FVector& HandRelative) const
+{
+	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
+	FQuat WorldToHandTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp);
+
+	return WorldToHandTransform.RotateVector(HandRelative);
+}
+
 bool APrototype1Character::IsGrabbing() const
 {
 	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;

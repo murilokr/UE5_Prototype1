@@ -89,6 +89,9 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FName HitBoneName;
 
+	FQuat WorldToHandTransform;
+	FQuat HandToWorldTransform;
+
 	// Hand Location
 	FVector GetHandLocation() const;
 
@@ -198,6 +201,9 @@ public:
 	UFUNCTION(BlueprintPure)
 	FRotator GetHandRotation(int HandIndex) const;
 	FRotator GetHandRotation(const FHandsContextData& HandData) const;
+
+	FVector RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const;
+	FVector RotateToWorld(const FHandsContextData& HandData, const FVector& HandRelative) const;
 
 	// IsGrabbing
 	UFUNCTION(BlueprintPure)

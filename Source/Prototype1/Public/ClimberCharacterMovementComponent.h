@@ -35,6 +35,8 @@ private:
 	void PhysClimbing(float DeltaSeconds, int32 Iterations);
 	bool IsClimbing() const;
 
+	FVector GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData);
+
 	virtual float GetMaxBrakingDeceleration() const override;
 
 public:

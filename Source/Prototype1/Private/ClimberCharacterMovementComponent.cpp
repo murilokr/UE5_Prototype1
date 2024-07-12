@@ -234,14 +234,19 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		float timeTick = GetSimulationTimeStep(remainingTime, Iterations);
 		remainingTime -= timeTick;
 
-		// We need to impart the velocity of the object that we are holding onto here.
-		FVector Acc = FVector::ZeroVector;
-		Acc += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
+		// We may need to impart the velocity of the object that we are holding onto here.
+		FVector ClimbingAcceleration = FVector::ZeroVector;
+		ClimbingAcceleration += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
+
+		FVector HorizontalHandsControl = Acceleration;
 
 		// Calculates velocity if not being controlled by root motion.
 		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 		{
-			Acc += HandMoveDir * MoveIntensityMultiplier;
+			const float MaxSpeed = GetMaxSpeed();
+			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
+
+			ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 
 			GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 
@@ -256,6 +261,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 				{
 					FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
+					HorizontalHandsControl += GetHorizontalHandAcceleration(HorizontalHandsControl, LeftHandData);
+
 					FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(LeftHandData, timeTick, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
 					if (MovementClimbingUtils::IsDynamicGrabObject(LeftHandData))
 					{
@@ -269,6 +276,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 				{
 					FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
+					HorizontalHandsControl += GetHorizontalHandAcceleration(HorizontalHandsControl, RightHandData);
+
 					FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(RightHandData, timeTick, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
 					if (MovementClimbingUtils::IsDynamicGrabObject(RightHandData))
 					{
@@ -288,19 +297,30 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				if (!SnapArmsVector.IsZero())
 				{
 					const FVector AccelWithoutArmStretch = Acceleration;
-					Acc += SnapArmsVector * ArmStretchIntensityMultiplier;
+					ClimbingAcceleration += SnapArmsVector * ArmStretchIntensityMultiplier;
 					GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
 						SnapArmsVector.Length(), *SnapArmsVector.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 				}
 			}
 
+			// Apply climbing acceleration
+			const bool bZeroClimbingAcceleration = ClimbingAcceleration.IsZero();
+			if (!bZeroClimbingAcceleration)
+			{
+				Velocity += ClimbingAcceleration * timeTick;// Try to not have SnapArmsVector be multiplied by timeTick.
+				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
+			}
+			
+			// Apply input hand acceleration
+			const bool bZeroHandAcceleration = HorizontalHandsControl.IsZero();
+			if (!bZeroHandAcceleration)
+			{
+				Velocity += HorizontalHandsControl * timeTick;
+				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
+			}
+
 			//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
 			HandMoveDir = FVector::ZeroVector;
-			const float MaxSpeed = GetMaxSpeed();
-			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
-
-			Velocity += Acc * timeTick;// Try to not have SnapArmsVector be multiplied by timeTick.
-			Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 
 			// Apply friction
 			Velocity = Velocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
@@ -348,6 +368,21 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		Velocity = (UpdatedComponent->GetComponentLocation() - OldLocation) / timeTick;
 		//}
 	}
+}
+
+FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
+{
+	// No acceleration in Y and Z. Only W/S works for controlling the arms horizontally.
+	const FVector HandRelativeAcceleration = ClimberCharacterOwner->RotateToHand(HandData, InitialAcceleration);
+	FVector HandAcceleration = ClimberCharacterOwner->RotateToWorld(HandData, FVector(HandRelativeAcceleration.X, 0.f, 0.f));
+
+	// bound acceleration, falling object has minimal ability to impact acceleration
+	if (HandRelativeAcceleration.SizeSquared2D() > 0.f)
+	{
+		HandAcceleration = HandAcceleration.GetClampedToMaxSize(GetMaxAcceleration());
+	}
+
+	return HandAcceleration;
 }
 
 bool UClimberCharacterMovementComponent::IsClimbing() const
