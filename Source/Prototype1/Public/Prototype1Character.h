@@ -215,6 +215,19 @@ public:
 	void ReleaseHand(const FHandsContextData& HandData);
 	/** End of Hand Utility Functions */
 
+	/** Free Look Functions */
+	void ResetLook();
+
+	// Used to indicate if we are lerping the camera back to its original rotation.
+	UFUNCTION(BlueprintPure)
+	bool IsLookingBack() const;
+
+	UFUNCTION(BlueprintPure)
+	float GetLookBackBlend() const;
+
+	FRotator GetFreeLookPreviousControlRotation() const { return FreeLookControlRotation; };
+	/** End of Free Look Functions */
+
 	UFUNCTION(BlueprintCallable)
 	void StartCoyoteTime();
 
@@ -309,8 +322,6 @@ protected:
 
 	// This is used to end look around while grabbing something.
 	void EndFreeLook(const FInputActionValue& Value);
-
-	void ResetLook();
 
 	bool CanUseYaw(const FRotator& Delta, float LookAxisValue) const;
 

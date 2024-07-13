@@ -62,6 +62,26 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 					MeshPivot->SetWorldRotation(PawnViewRotation);
 				}
 			}
+			
+			// Handle LookBack
+			if (ClimberCharacter->IsLookingBack())
+			{
+				const float Blend = ClimberCharacter->GetLookBackBlend();
+
+				FRotator NewControlRotation = FMath::Lerp(OwningController->GetControlRotation(), ClimberCharacter->GetFreeLookPreviousControlRotation(), Blend);
+				if (NewControlRotation.Equals(OwningController->GetControlRotation(), 1e-3f))
+				{
+					UE_LOG(LogTemp, Display, TEXT("NewControlRotation is equals to ControlRotation. EARLY OUT!"));
+					ClimberCharacter->ResetLook();
+				}
+				else
+				{
+					OwningController->SetControlRotation(NewControlRotation);
+
+					const FQuat FPRelativeRotation = FQuat::Slerp(ClimberCharacter->FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Blend);
+					ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+				}
+			}
 
 			if (OutVT.Target)
 			{
