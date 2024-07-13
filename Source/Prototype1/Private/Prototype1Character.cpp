@@ -134,6 +134,27 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
 
+	if (LookBackTimer > 0.f)
+	{
+		LookBackTimer -= DeltaSeconds;
+		if (LookBackTimer <= 0.f)
+		{
+			ResetLook();
+		}
+		else
+		{
+			const float Alpha = 1.f - (LookBackTimer / LookBackTime);
+			FRotator ControlRotation = FMath::Lerp(GetControlRotation(), FreeLookControlRotation, Alpha);
+			if (AController* MyController = GetController())
+			{
+				MyController->SetControlRotation(ControlRotation);
+			}
+
+			const FQuat FPRelativeRotation = FQuat::Slerp(FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Alpha);
+			FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+		}
+	}
+
 	if (CoyoteTimer > 0.f)
 	{
 		CoyoteTimer -= DeltaSeconds;
@@ -179,26 +200,45 @@ void APrototype1Character::StopCoyoteTime()
 
 void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 {
+	if (IsFreeLooking)
+	{
+		return;
+	}
+
 	IsFreeLooking = true;
-	//FreeLookControlRotation = GetControlRotation();
+	FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 }
 
 void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 {
+	if (!IsFreeLooking)
+	{
+		return;
+	}
+
+	LookBackTimer = LookBackTime;
+}
+
+void APrototype1Character::ResetLook()
+{
+	LookBackTimer = 0.f;
+
 	// Reset camera to ControlRotation.
-	/*if (AController* MyController = GetController())
+	if (AController* MyController = GetController())
 	{
 		MyController->SetControlRotation(FreeLookControlRotation);
-	}*/
+	}
 
-	IsFreeLooking = false;
 	bUseControllerRotationYaw = true;
 
 	FirstPersonCameraComponent->SetRelativeRotation(FQuat::Identity);
 	FirstPersonCameraComponent->bUsePawnControlRotation = false;
+
+	IsFreeLooking = false;
 }
+
 
 void APrototype1Character::Look(const FInputActionValue& Value)
 {

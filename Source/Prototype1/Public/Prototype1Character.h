@@ -259,6 +259,9 @@ public:
 	float ClavicleShoulderLengthMultiplier = 0.5f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float LookBackTime = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float FreeLookYawAngleLimit = 160.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
@@ -307,6 +310,8 @@ protected:
 	// This is used to end look around while grabbing something.
 	void EndFreeLook(const FInputActionValue& Value);
 
+	void ResetLook();
+
 	bool CanUseYaw(const FRotator& Delta, float LookAxisValue) const;
 
 	bool CanUsePitch(const FRotator& Delta, float LookAxisValue) const;
@@ -346,6 +351,7 @@ protected:
 private:
 
 	FRotator FreeLookControlRotation;
+	float LookBackTimer = 0.f;
 
 	float CoyoteTimer = 0.f;
 
