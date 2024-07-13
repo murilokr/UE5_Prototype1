@@ -52,17 +52,6 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(OwningController->GetPawn()))
 		{
-			// Deal with rotating the MeshPivot
-			if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
-			{
-				const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
-				UStaticMeshComponent* MeshPivot = ClimberCharacter->MeshPivot;
-				if (!PawnViewRotation.Equals(MeshPivot->GetComponentRotation()))
-				{
-					MeshPivot->SetWorldRotation(PawnViewRotation);
-				}
-			}
-			
 			// Handle LookBack
 			if (ClimberCharacter->IsLookingBack())
 			{
@@ -80,6 +69,17 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 
 					const FQuat FPRelativeRotation = FQuat::Slerp(ClimberCharacter->FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Blend);
 					ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+				}
+			}
+
+			// Deal with rotating the MeshPivot
+			if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
+			{
+				const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
+				UStaticMeshComponent* MeshPivot = ClimberCharacter->MeshPivot;
+				if (!PawnViewRotation.Equals(MeshPivot->GetComponentRotation()))
+				{
+					MeshPivot->SetWorldRotation(PawnViewRotation);
 				}
 			}
 
