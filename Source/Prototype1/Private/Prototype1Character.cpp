@@ -373,6 +373,14 @@ void APrototype1Character::Grab(int HandIndex)
 	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(HitResult.Location);
 	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.InverseTransformVector(HitResult.Normal);
 
+
+	// Adding a slip here just for debugging purposes
+	const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, HitResult.Normal).GetSafeNormal();
+	const FVector SlipVector = HitResult.Location + SlipDir * 60.f;
+	//AddHandSlipTarget(HandData, SlipVector);
+
+
+
 	ClimberMovementComponent->SetHandGrabbing(HandData);
 
 	OnStartGrab(HandData, HandIndex);
@@ -491,7 +499,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 
 		if (TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds))
 		{
-			HandLocation = GetSafeHandLocation(HandData);
+			//HandLocation = GetSafeHandLocation(HandData);
 			// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
 		}
 
@@ -527,68 +535,54 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 		return false;
 	}
 
-	const FVector HandSlipVector = -HandRelativeUp * (1 + SlipRatio);
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 1.25f, 0, 0.5f);
-	
-	GEngine->AddOnScreenDebugMessage(16, 0.5f, FColor::Yellow, TEXT("SLIPPING!"));
-	GEngine->AddOnScreenDebugMessage(17, 0.5f, FColor::Emerald, FString::Printf(TEXT("Slip Vector Length: %f - Arm Vector Length: %f (%f)"),
-		HandSlipVector.Size(), ProjectedArmVector.Size(), ArmVector.Size()));
+	const FVector HandSlipVector = -HandRelativeUp * (4 + SlipRatio);
+	SetHandSlipVelocity(HandData, HandSlipVector);
+	return true;
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 1.25f, 0, 0.5f);
+	//
+	//GEngine->AddOnScreenDebugMessage(16, 0.5f, FColor::Yellow, TEXT("SLIPPING!"));
+	//GEngine->AddOnScreenDebugMessage(17, 0.5f, FColor::Emerald, FString::Printf(TEXT("Slip Vector Length: %f - Arm Vector Length: %f (%f)"),
+	//	HandSlipVector.Size(), ProjectedArmVector.Size(), ArmVector.Size()));
 
-	const float HandPhysicalHeight = 9.635022f;
-	const float HandPhysicalRadius = 6.519027f;
+	//DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 1.25f, 0, 1.0f);
 
-	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 1.25f, 0, 1.0f);
+	//FCollisionQueryParams QueryParams;
+	//QueryParams.AddIgnoredActor(this);
 
-	FCollisionQueryParams QueryParams;
-	QueryParams.AddIgnoredActor(this);
+	////// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
+	//FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
+	//TArray<FHitResult> HitResults;
+	//GetWorld()->SweepMultiByChannel(HitResults, HandLocation + HandSlipVector, HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
 
-	//// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
-	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
-	TArray<FHitResult> HitResults;
-	GetWorld()->SweepMultiByChannel(HitResults, HandLocation + HandSlipVector, HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	//FHitResult BestHitResult;
+	//bool bHadValidBlockingHit = false;
+	//for (const FHitResult& HR : HitResults)
+	//{
+	//	if (HR.bBlockingHit)
+	//	{
+	//		if (HR.GetActor() == HandData.HitActor)
+	//		{
+	//			BestHitResult = HR;
+	//			bHadValidBlockingHit = true;
+	//			DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 1.25f, 0, 1.0f);
+	//			DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 1.25f, 0, 1.0f);
+	//			break;
+	//		}
+	//	}
+	//}
 
-	FHitResult BestHitResult;
-	bool bHadValidBlockingHit = false;
-	for (const FHitResult& HR : HitResults)
-	{
-		if (HR.bBlockingHit)
-		{
-			if (HR.GetActor() == HandData.HitActor)
-			{
-				BestHitResult = HR;
-				bHadValidBlockingHit = true;
-				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 1.25f, 0, 1.0f);
-				DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 1.25f, 0, 1.0f);
-				break;
-			}
-		}
-	}
-
-	if (bHadValidBlockingHit)
-	{
-		const FVector MoveDelta = HandLocation + HandSlipVector;
-		FHitResult MoveDeltaHitResult;
-		GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, MoveDelta, MoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
-		if (!MoveDeltaHitResult.bBlockingHit)
-		{
-			UE_LOG(LogTemp, Error, TEXT("[APrototype1Character::TryToSlipHand] Something went incredibly wrong here."));
-			GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Red, TEXT("[APrototype1Character::TryToSlipHand] Something went incredibly wrong here."));
-			return false;
-		}
-
-		DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 1.25f, 0, 1.0f);
-
-		FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
-		HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(MoveDelta);
-		HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
-		return true;
-	}
-	
-	DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 1.25f, 0, 1.0f);
-	// TODO:
-	// Maybe do an extra check on the stretchratio to see if the hands just let go?
-	// Or maybe have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
-	return false;
+	//if (bHadValidBlockingHit)
+	//{
+	//	const FVector MoveDelta = HandLocation + HandSlipVector;
+	//	MoveHandGrabLocation(HandData, MoveDelta); // This should be called inside CMC after calculating our separate "HandSlipVelocity"
+	//	return true;
+	//}
+	//
+	//DrawDebugCapsule(GetWorld(), HandLocation + HandSlipVector, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Red, false, 1.25f, 0, 1.0f);
+	//// TODO:
+	//// Maybe do an extra check on the stretchratio to see if the hands just let go?
+	//// Or maybe have a hand resistance buffer, that gets added to each frame we slip the hand, and once it reaches a threshold, we let go.
+	//return false;
 }
 
 FVector APrototype1Character::GetHandLocation(int HandIndex) const
@@ -667,6 +661,89 @@ FVector APrototype1Character::RotateToWorld(const FHandsContextData& HandData, c
 bool APrototype1Character::IsGrabbing() const
 {
 	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;
+}
+
+FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
+{
+	const FVector HandLocation = HandData.GetHandLocation();
+	const FQuat HandRotation = GetHandRotation(HandData).Quaternion();
+
+	DrawDebugDirectionalArrow(GetWorld(), HandLocation, SlipTarget, 1.0f, FColor::Red, false, 10.25f, 0, 0.5f);
+	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 10.25f, 0, 1.0f);
+
+	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	TArray<FHitResult> HitResults;
+	GetWorld()->SweepMultiByChannel(HitResults, HandLocation, SlipTarget, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+
+	for (const FHitResult& HR : HitResults)
+	{
+		if (HR.bBlockingHit)
+		{
+			if (HR.GetActor() == HandData.HitActor)
+			{
+				const float AngleDiff = FMath::RadiansToDegrees(FMath::Asin(HR.Normal | HandData.GetHandNormal()));
+				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 10.25f, 0, 1.0f);
+				DrawDebugCapsule(GetWorld(), SlipTarget, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 10.25f, 0, 1.0f);
+				GEngine->AddOnScreenDebugMessage(36, 10.25f, FColor::Yellow, FString::Printf(TEXT("Angle Diff of Slip Target Normal and Current Hand Normal: %f"), AngleDiff));
+
+				return SlipTarget;
+			}
+		}
+	}
+
+	return HandLocation;
+}
+
+void APrototype1Character::AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
+{
+	const FVector ValidatedSlipTarget = ValidateHandSlipTarget(HandData, SlipTarget);
+	ClimberMovementComponent->HandSlipTarget = ValidatedSlipTarget;
+}
+
+void APrototype1Character::SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity)
+{
+	if (bOverrideVelocity)
+	{
+		ClimberMovementComponent->HandSlipVelocity = SlipVelocity;
+	}
+	else
+	{
+		// Add to the current HandSlipVelocity
+		ClimberMovementComponent->HandSlipVelocity += SlipVelocity;
+	}
+}
+
+FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta)
+{
+	const FVector HandLocation = HandData.GetHandLocation();
+	const FQuat HandRotation = GetHandRotation(HandData).Quaternion();
+
+	const FVector HandMoveDelta = HandLocation + MoveDelta;
+
+	FCollisionQueryParams QueryParams;
+	QueryParams.AddIgnoredActor(this);
+
+	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
+
+	FHitResult MoveDeltaHitResult;
+	GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, HandMoveDelta, HandMoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	if (!MoveDeltaHitResult.bBlockingHit)
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APrototype1Character::MoveHandGrabLocation] Something went incredibly wrong here."));
+		GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Red, TEXT("[APrototype1Character::MoveHandGrabLocation] Something went incredibly wrong here."));
+		return HandLocation;
+	}
+
+	DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 0.25f, 0, 1.0f);
+
+	FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
+	HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(HandMoveDelta);
+	HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
+
+	return HandMoveDelta;
 }
 
 bool APrototype1Character::CanUseYaw(const FRotator& Delta, float LookAxisValue) const

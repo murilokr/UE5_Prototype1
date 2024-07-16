@@ -55,6 +55,9 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float WallFriction = 1.3;
 
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	float MaxSlipSpeed = 150.f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Character Movement: Walking", meta = (ClampMin = "0", UIMin = "0"))
 	float BrakingDecelerationClimbing;
 
@@ -66,6 +69,12 @@ public:
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector HandSlipVelocity;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector HandSlipTarget;
 
 private:
 	FVector PrevLeftHandObjectLocation;

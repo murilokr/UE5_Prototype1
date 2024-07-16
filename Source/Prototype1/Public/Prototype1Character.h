@@ -209,6 +209,15 @@ public:
 	UFUNCTION(BlueprintPure)
 	bool IsGrabbing() const;
 
+	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
+
+	// Used for accelerating the hand grab location towards SlipTarget.
+	void AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
+
+	void SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity = false);
+
+	FVector MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta);
+
 	UFUNCTION(BlueprintCallable)
 	void ReleaseHand(int HandIndex);
 
@@ -266,6 +275,12 @@ public:
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float HandSafeZone = 10.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float HandPhysicalHeight = 9.635022f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float HandPhysicalRadius = 6.519027f;
 
 	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
@@ -344,6 +359,7 @@ protected:
 	/** Called for grabbing input */
 	void Grab(const int HandIndex);
 
+	/** Called for mouse input for moving the hands */
 	void MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector);
 
 	/** Called for grabbing input */

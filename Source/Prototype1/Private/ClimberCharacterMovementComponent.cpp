@@ -240,6 +240,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 		FVector HorizontalHandsControlAcceleration = Acceleration;
 
+		FVector HandSlipAcceleration = FVector::ZeroVector;
+
 		const float MaxDecel = GetMaxBrakingDeceleration();
 
 		// Calculates velocity if not being controlled by root motion.
@@ -258,11 +260,17 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				FVector RootDeltaFixLeftHand = FVector::ZeroVector; // ALWAYS remember to initialize variables
 				FVector RootDeltaFixRightHand = FVector::ZeroVector; // ALWAYS!!
 
-				const FVector BodyOffset = Velocity * timeTick;
+				FVector BodyOffset = (Velocity + HandSlipVelocity) * timeTick;
 
 				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 				{
-					FHandsContextData& LeftHandData = ClimberCharacterOwner->LeftHandData;
+					FHandsContextData& LeftHandData = ClimberCharacterOwner->GetMutableHandData(1);
+
+					// Calculate HandSlipAcceleration
+					// Hardcoded for left hand for now, for debugging purposes. On the future, each hand should have their own slip end point.
+					HandSlipAcceleration = HandSlipEnd - LeftHandData.GetHandLocation();
+
+					// Calculate HandControlAcceleration
 					HorizontalHandsControlAcceleration += GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, LeftHandData);
 
 					FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(LeftHandData, timeTick, BodyOffset, IsArmOutstretched, RootDeltaFixLeftHand);
@@ -277,7 +285,9 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				}
 				if (ClimberCharacterOwner->RightHandData.IsGrabbing)
 				{
-					FHandsContextData& RightHandData = ClimberCharacterOwner->RightHandData;
+					FHandsContextData& RightHandData = ClimberCharacterOwner->GetMutableHandData(0);
+
+					// Calculate HandControlAcceleration
 					HorizontalHandsControlAcceleration += GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, RightHandData);
 
 					FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(RightHandData, timeTick, BodyOffset, IsArmOutstretched, RootDeltaFixRightHand);
@@ -290,7 +300,6 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 						//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData, Acc);	
 					}
 				}
-
 
 				// Snapping Root back to a acceptable shoulder distance from the hand.
 				// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
@@ -313,7 +322,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			//{
 			//	// Acceleration = TotalAcceleration for CalcVelocity(), but we restore it after using it.
 			//	TGuardValue<FVector> RestoreAcceleration(Acceleration, TotalAcceleration);
-			//	CalcVelocity(timeTick, WallFriction, true, MaxDecel);
+			//	CalcVelocity(timeTick, WallFriction, false, MaxDecel);
 			//}
 
 			// Apply fluid friction
@@ -330,9 +339,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				const float VelSize = Velocity.Size();
 				Velocity = Velocity - (Velocity - AccelDir * VelSize) * FMath::Min(timeTick * WallFriction, 1.f);
 
-				const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
 				Velocity += HorizontalHandsControlAcceleration * timeTick;
-				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 			}
 
 			// Apply climbing acceleration
@@ -346,13 +353,29 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				const FVector AccelDir = ClimbingAcceleration.GetSafeNormal();
 				const float VelSize = Velocity.Size();
 				Velocity = Velocity - (Velocity - AccelDir * VelSize) * FMath::Min(timeTick * WallFriction, 1.f);
-				
-				const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
 
-				const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
 				Velocity += ClimbingAcceleration * timeTick;
-				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 			}
+
+			const bool bZeroHandSlipAcceleration = HandSlipAcceleration.IsZero();
+			if (!bZeroHandSlipAcceleration)
+			{
+				GEngine->AddOnScreenDebugMessage(32, timeTick, FColor::Green, TEXT("Apply Hand Slip Acceleration"));
+
+				// Apply friction
+				const FVector AccelDir = HandSlipAcceleration.GetSafeNormal();
+				const float VelSize = HandSlipVelocity.Size();
+				HandSlipVelocity = HandSlipVelocity - (HandSlipVelocity - AccelDir * VelSize) * FMath::Min(timeTick * WallFriction, 1.f);
+
+				const float NewMaxInputSlipSpeed = IsExceedingMaxSpeed(150.f) ? Velocity.Size() : 150.f;
+				HandSlipVelocity += HandSlipAcceleration * timeTick;
+				HandSlipVelocity = HandSlipVelocity.GetClampedToMaxSize(NewMaxInputSlipSpeed);
+			}
+
+			// Add HandSlipVelocity to Velocity
+			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
+			Velocity += HandSlipVelocity;
+			Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 
 			// Debug
 			//const FVector ActorLocation = UpdatedComponent->GetComponentLocation();
@@ -362,6 +385,18 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		ApplyRootMotionToVelocity(timeTick);
 
 		bJustTeleported = false;
+
+		////////////////////////////////////////////////////////////////////////////////////////
+		// Again only hardcoded for left hand for now, add this to each hand later.
+		FVector OldHandLocation = ClimberCharacterOwner->GetMutableHandData(1).GetHandLocation();
+		const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(ClimberCharacterOwner->GetMutableHandData(1), HandSlipVelocity * timeTick);
+		if (HandSlipEnd.Equals(NewHandLocation))
+		{
+			HandSlipEnd = FVector::ZeroVector;
+		}
+
+		HandSlipVelocity = (NewHandLocation - OldHandLocation) / timeTick;
+		////////////////////////////////////////////////////////////////////////////////////////
 
 		FVector OldLocation = UpdatedComponent->GetComponentLocation();
 		const FVector Delta = Velocity * timeTick;
