@@ -71,10 +71,10 @@ public:
 	FVector HandMoveDir;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	FVector HandSlipVelocity;
+	FVector HandSlipVelocity = FVector::ZeroVector;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	FVector HandSlipTarget;
+	FVector HandSlipTarget = FVector::ZeroVector;
 
 private:
 	FVector PrevLeftHandObjectLocation;
