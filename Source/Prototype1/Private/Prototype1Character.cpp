@@ -131,6 +131,9 @@ void APrototype1Character::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	TraceForHand(RightHandData);
+	TraceForHand(LeftHandData);
+
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
 
@@ -316,12 +319,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	//const FVector MoveObjectVectorWithForce = (GrabTargetPosition - HandLocation) * (DragForce / DeltaSeconds);
 }
 
-void APrototype1Character::Grab(int HandIndex)
+void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 {
-	FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 	if (HandData.IsGrabbing)
 	{
-		// Something went wrong.
+		HandData.CurrentFrameTracedHitResult = FHitResult(-1.0f);
 		return;
 	}
 
@@ -329,7 +331,7 @@ void APrototype1Character::Grab(int HandIndex)
 	const float TraceVerticalExtension = FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
 	GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
 
-	const FName ClavicleBone = (HandIndex == 0) ? FName("clavicle_r") : FName("clavicle_l");
+	const FName ClavicleBone = (HandData.HandIndex == 0) ? FName("clavicle_r") : FName("clavicle_l");
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(ClavicleBone);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
 	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
@@ -343,13 +345,24 @@ void APrototype1Character::Grab(int HandIndex)
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
-	//DrawDebugLine(GetWorld(), TraceStart, TraceEnd, HitResult.bBlockingHit ? FColor::Blue : FColor::Red, false, 2.5f, 0, 1.25f);
+	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.025f, 0, 1.0f);
 
-	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 5.0f, 0, 1.0f);
+	HandData.CurrentFrameTracedHitResult = HitResult;
+}
 
-	// Nothing was hit.
-	if (!HitResult.bBlockingHit)
+void APrototype1Character::Grab(int HandIndex)
+{
+	FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
+	if (HandData.IsGrabbing)
 	{
+		return;
+	}
+
+	const FHitResult HitResult = HandData.CurrentFrameTracedHitResult;
+
+	if (HitResult.Time == -1.0f || !HitResult.bBlockingHit)
+	{
+		// Nothing was hit in this frame. Let's add this input to the input buffer so we can check the same input over the next few frames.
 		return;
 	}
 
@@ -511,11 +524,8 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
 		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
-		if (TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds))
-		{
-			//HandLocation = GetSafeHandLocation(HandData);
-			// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
-		}
+		TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds);
+		// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
 
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;

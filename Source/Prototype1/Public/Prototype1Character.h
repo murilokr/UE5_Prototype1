@@ -17,6 +17,7 @@ class UInputMappingContext;
 class USkeletalMeshComponent;
 
 struct FInputActionValue;
+struct FHitResult;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
@@ -101,6 +102,10 @@ struct FHandsContextData
 
 	// Grab Target Position.
 	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const;
+
+
+	// Per frame values
+	FHitResult CurrentFrameTracedHitResult = FHitResult(-1.0f);
 };
 
 
@@ -355,6 +360,8 @@ protected:
 
 	/** Called for grabbing input Left */
 	void StopGrabL(const FInputActionValue& Value);
+
+	void TraceForHand(FHandsContextData& HandData);
 
 	/** Called for grabbing input */
 	void Grab(const int HandIndex);
