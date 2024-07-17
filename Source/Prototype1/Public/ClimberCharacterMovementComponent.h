@@ -54,6 +54,9 @@ public:
 	float GravityForce = 5000.0f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	float HandsControlAcceleration = 150.f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float WallFriction = 1.3;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")

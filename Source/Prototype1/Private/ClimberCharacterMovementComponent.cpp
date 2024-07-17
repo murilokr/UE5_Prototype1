@@ -250,6 +250,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			const float MaxSpeed = GetMaxSpeed();
 
 			ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
+			HandMoveDir = FVector::ZeroVector;
 
 			GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 
@@ -268,55 +269,26 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 					}
 				}
 				ComputeHandAccelerations(1, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
+
+				// Force Full HandControlAcceleration.
+				if (HorizontalHandsControlAcceleration.SizeSquared() > UE_SMALL_NUMBER)
+				{
+					HorizontalHandsControlAcceleration = HorizontalHandsControlAcceleration.GetSafeNormal() * HandsControlAcceleration;
+				}
 			}
-			//CalcVelocity(DeltaSeconds, WallFriction, true, GetMaxBrakingDeceleration());
-			HandMoveDir = FVector::ZeroVector;
 			
 
-			//const FVector TotalAcceleration = (HorizontalHandsControlAcceleration + ClimbingAcceleration).GetClampedToMaxSize(GetMaxAcceleration());
-			//// Compute Velocity
-			//{
-			//	// Acceleration = TotalAcceleration for CalcVelocity(), but we restore it after using it.
-			//	TGuardValue<FVector> RestoreAcceleration(Acceleration, TotalAcceleration);
-			//	CalcVelocity(timeTick, WallFriction, true, MaxDecel);
-			//}
+			// Compute Velocity by applying ClimbingAcceleration and HorizontalHandsControlAcceleration.
+			{
+				AnalogInputModifier = FMath::Clamp<FVector::FReal>(ClimbingAcceleration.Size() / GetMaxAcceleration(), 0.f, 1.f);
+				const FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration;
 
-			// Apply fluid friction
-			Velocity = Velocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
+				// Acceleration = FinalAcceleration when inside CalcVelocity, and returns to it's original state afterwards.
+				TGuardValue<FVector> RestoreAcceleration(Acceleration, FinalAcceleration);
+				CalcVelocity(timeTick, WallFriction, true, MaxDecel);
+			}
+
 			HandSlipVelocity = HandSlipVelocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
-
-			// Apply input hand acceleration
-			const bool bZeroHandAcceleration = HorizontalHandsControlAcceleration.IsZero();
-			if (!bZeroHandAcceleration)
-			{
-				GEngine->AddOnScreenDebugMessage(30, timeTick, FColor::Green, TEXT("Apply Horizontal Hand Acceleration"));
-
-				// Friction affects our ability to change direction.
-				const FVector AccelDir = HorizontalHandsControlAcceleration.GetSafeNormal();
-				const float VelSize = Velocity.Size();
-				Velocity = Velocity - (Velocity - AccelDir * VelSize) * FMath::Min(timeTick * WallFriction, 1.f);
-
-				const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
-				Velocity += HorizontalHandsControlAcceleration * timeTick;
-				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
-			}
-
-			// Apply climbing acceleration
-			// Todo: Apply deceleration when HandMoveDir is zero and player is falling towards a overstretched state!
-			const bool bZeroClimbingAcceleration = ClimbingAcceleration.IsZero();
-			if (!bZeroClimbingAcceleration)
-			{
-				GEngine->AddOnScreenDebugMessage(31, timeTick, FColor::Green, TEXT("Apply Climbing Acceleration"));
-
-				// Friction affects our ability to change direction.
-				const FVector AccelDir = ClimbingAcceleration.GetSafeNormal();
-				const float VelSize = Velocity.Size();
-				Velocity = Velocity - (Velocity - AccelDir * VelSize) * FMath::Min(timeTick * WallFriction, 1.f);
-
-				const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
-				Velocity += ClimbingAcceleration * timeTick;
-				Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
-			}
 
 			const bool bZeroHandSlipAcceleration = HandSlipAcceleration.IsZero();
 			if (!bZeroHandSlipAcceleration)
