@@ -381,6 +381,20 @@ void APrototype1Character::Grab(int HandIndex)
 
 
 
+	const FRotator HandRotation = GetHandRotation(HandData);
+	if (HandIndex == 0)
+	{
+		HandData.WorldToHandTransform = FQuat::FindBetweenNormals(FVector::RightVector, -HandRotation.RotateVector(FVector::RightVector));
+	}
+	else
+	{
+		HandData.WorldToHandTransform = FQuat::FindBetweenNormals(FVector::RightVector, HandRotation.RotateVector(FVector::RightVector));
+	}
+
+	HandData.HandToWorldTransform = HandData.WorldToHandTransform.Inverse();
+	DrawDebugCoordinateSystem(GEngine->GetWorld(), HitResult.Location, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GEngine->GetWorld(), HitResult.Location, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+
 	ClimberMovementComponent->SetHandGrabbing(HandData);
 
 	OnStartGrab(HandData, HandIndex);
@@ -644,16 +658,28 @@ FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData
 
 FVector APrototype1Character::RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const
 {
-	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
-	FQuat HandToWorldTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp).Inverse();
+	//const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
+	//const FQuat HandToWorldTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp).Inverse();
+	//const FQuat HandToWorldTransform = GetHandRotation(HandData).Quaternion().Inverse();
+	const FQuat HandToWorldTransform = HandData.HandToWorldTransform;
+
+	const FVector HandLoc = HandData.GetHandLocation();
+	DrawDebugCoordinateSystem(GetWorld(), HandLoc, HandToWorldTransform.Rotator(), 10.0f, false, 0.15f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + HandToWorldTransform.RotateVector(WorldRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
 
 	return HandToWorldTransform.RotateVector(WorldRelative);
 }
 
 FVector APrototype1Character::RotateToWorld(const FHandsContextData& HandData, const FVector& HandRelative) const
 {
-	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
-	FQuat WorldToHandTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp);
+	//const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
+	//const FQuat WorldToHandTransform = FQuat::FindBetweenNormals(FVector::UpVector, -HandRelativeUp);
+	//const FQuat WorldToHandTransform = GetHandRotation(HandData).Quaternion();
+	const FQuat WorldToHandTransform = HandData.WorldToHandTransform;
+
+	const FVector HandLoc = HandData.GetHandLocation() - FVector::UpVector * 10.0f;
+	DrawDebugCoordinateSystem(GetWorld(), HandLoc, WorldToHandTransform.Rotator(), 15.0f, false, 0.15f, 0, 1.0f);
+	DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + WorldToHandTransform.RotateVector(HandRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
 
 	return WorldToHandTransform.RotateVector(HandRelative);
 }
@@ -848,7 +874,7 @@ FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector Rela
 	const FRotator HandRotation = FRotationMatrix::MakeFromYZ(HandNormal, FixedYAxis).Rotator();//FRotationMatrix::MakeFromY(HandNormal).Rotator();
 
 	// Debug
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHandLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
+	//DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHandLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
 
 	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
 	return HandRotation;

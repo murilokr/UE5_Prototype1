@@ -403,8 +403,12 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 			RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
 	}
 }
+
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
 {
+	const FRotator AccelRotator = FRotationMatrix::MakeFromX(Acceleration).Rotator();
+	//DrawDebugCoordinateSystem(GetWorld(), HandData.GetHandLocation() + FVector::UpVector * 10.f, AccelRotator, 15.0f, false, 0.15f, 0, 1.0f);
+
 	// No acceleration in X and Z 
 	// Only Y which is relative to Hand, which is Forward and Backward a.k.a: only W/S works for controlling the arms horizontally
 	const FVector HandRelativeAcceleration = ClimberCharacterOwner->RotateToHand(HandData, InitialAcceleration);
