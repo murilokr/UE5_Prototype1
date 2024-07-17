@@ -131,6 +131,9 @@ void APrototype1Character::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
+	// Handling Input Buffers
+	ProcessInputBuffers(DeltaSeconds);
+
 	TraceForHand(RightHandData);
 	TraceForHand(LeftHandData);
 
@@ -348,6 +351,24 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.025f, 0, 1.0f);
 
 	HandData.CurrentFrameTracedHitResult = HitResult;
+
+	if (HitResult.bBlockingHit)
+	{
+		// Hand is ready to grab.
+
+		// Now we check for the input buffer in case we have a pending input on this hand
+		float& HandInputBuffer = (HandData.HandIndex == 0) ? RightHandGrabInputBuffer : LeftHandGrabInputBuffer;
+		if (HandInputBuffer > 0.f)
+		{
+			GEngine->AddOnScreenDebugMessage(40, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
+			Grab(HandData.HandIndex);
+			HandInputBuffer = 0.f;
+		}
+	}
+	else
+	{
+		// Hand is not ready to grab.
+	}
 }
 
 void APrototype1Character::Grab(int HandIndex)
@@ -363,6 +384,7 @@ void APrototype1Character::Grab(int HandIndex)
 	if (HitResult.Time == -1.0f || !HitResult.bBlockingHit)
 	{
 		// Nothing was hit in this frame. Let's add this input to the input buffer so we can check the same input over the next few frames.
+		StoreGrabInputBuffer(HandData);
 		return;
 	}
 
@@ -471,6 +493,27 @@ void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaS
 			}
 		}
 	}
+}
+
+void APrototype1Character::StoreGrabInputBuffer(const FHandsContextData& HandData)
+{
+	float& HandGrabInputBuffer = (HandData.HandIndex == 0) ? RightHandGrabInputBuffer : LeftHandGrabInputBuffer;
+	HandGrabInputBuffer = GrabInputBufferDuration;
+}
+
+void APrototype1Character::ProcessInputBuffers(float DeltaSeconds)
+{
+	auto ProcessBuffer = [this](float& GrabInputBuffer, float DeltaSeconds)
+	{
+		GrabInputBuffer -= DeltaSeconds;
+		if (GrabInputBuffer <= 0.f)
+		{
+			GrabInputBuffer = 0.f;
+		}
+	};
+
+	ProcessBuffer(RightHandGrabInputBuffer, DeltaSeconds);
+	ProcessBuffer(LeftHandGrabInputBuffer, DeltaSeconds);
 }
 
 FHandsContextData& APrototype1Character::GetMutableHandData(int HandIndex)
@@ -833,6 +876,7 @@ void APrototype1Character::GrabR(const FInputActionValue& Value)
 
 void APrototype1Character::StopGrabR(const FInputActionValue& Value)
 {
+	RightHandGrabInputBuffer = 0.f;
 	StopGrabbing(0);
 }
 
@@ -843,6 +887,7 @@ void APrototype1Character::GrabL(const FInputActionValue& Value)
 
 void APrototype1Character::StopGrabL(const FInputActionValue& Value)
 {
+	LeftHandGrabInputBuffer = 0.f;
 	StopGrabbing(1);
 }
 

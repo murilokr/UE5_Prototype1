@@ -378,6 +378,9 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	// Calculate HandControlAcceleration
 	HorizontalHandsControlAcceleration += GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, HandData);
 
+	// TODO: We can maybe have an extra acceleration before the Outstretched state, one that is the relaxed state and it slows down the arm movement
+	// so it tries to keep the arm in that position.
+
 	FVector RootDeltaFixHand = FVector::ZeroVector;
 	FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 	bool IsArmOutstretched;

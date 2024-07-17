@@ -165,6 +165,9 @@ public:
 	/** Game Feel Improvements */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay, meta = (AllowPrivateAccess = "true"))
 	float CoyoteTimeDuration = 0.275f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
+	float GrabInputBufferDuration = 0.75f;
 	
 	APrototype1Character(const FObjectInitializer& ObjectInitializer);
 
@@ -369,6 +372,9 @@ protected:
 	/** Called for mouse input for moving the hands */
 	void MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector);
 
+	void StoreGrabInputBuffer(const FHandsContextData& HandData);
+	void ProcessInputBuffers(float DeltaSeconds);
+
 	/** Called for grabbing input */
 	void StopGrabbing(const int HandIndex);
 
@@ -388,6 +394,9 @@ private:
 	float LookBackTimer = 0.f;
 
 	float CoyoteTimer = 0.f;
+
+	float RightHandGrabInputBuffer;
+	float LeftHandGrabInputBuffer;
 
 	// Cached "heavy" calculations for perf.
 	float ArmsLengthUnitsSquared;
