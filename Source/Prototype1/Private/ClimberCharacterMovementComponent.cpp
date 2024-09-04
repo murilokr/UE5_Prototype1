@@ -306,7 +306,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 			// Add HandSlipVelocity to Velocity
 			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
-			Velocity += HandSlipVelocity;
+			//Velocity += HandSlipVelocity;
 			Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);
 
 			// Debug
@@ -322,13 +322,13 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		// Again only hardcoded for left hand for now, add this to each hand later.
 		FVector OldHandLocation = ClimberCharacterOwner->GetMutableHandData(1).GetHandLocation();
 		const FVector HandDelta = HandSlipVelocity * timeTick;
-		const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(ClimberCharacterOwner->GetMutableHandData(1), HandDelta);
-		if (HandSlipTarget.Equals(NewHandLocation))
-		{
-			HandSlipTarget = FVector::ZeroVector;
-		}
+		//const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(ClimberCharacterOwner->GetMutableHandData(1), HandDelta);
+		//if (HandSlipTarget.Equals(NewHandLocation))
+		//{
+//			HandSlipTarget = FVector::ZeroVector;
+		//}
 
-		HandSlipVelocity = (NewHandLocation - OldHandLocation) / timeTick;
+		//HandSlipVelocity = (NewHandLocation - OldHandLocation) / timeTick;
 		////////////////////////////////////////////////////////////////////////////////////////
 
 		FVector OldLocation = UpdatedComponent->GetComponentLocation();
