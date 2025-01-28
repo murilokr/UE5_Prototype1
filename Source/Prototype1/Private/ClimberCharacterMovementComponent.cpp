@@ -254,7 +254,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 			GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
 
-			FVector SnapArmsVector;
+			//FVector SnapArmsVector;
 			if (ClimberCharacterOwner)
 			{
 				FVector BodyOffset = (Velocity + HandSlipVelocity) * timeTick;
