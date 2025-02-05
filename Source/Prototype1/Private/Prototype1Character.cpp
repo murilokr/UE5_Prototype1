@@ -44,7 +44,8 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 
 	// Create a CameraComponent
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
-	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("head"));
+	// If we are using a True FPS Pawn, we want to setup a attachment bone -- might be TEXT("head").
+	FirstPersonCameraComponent->SetupAttachment(Mesh1P);
 	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
@@ -202,7 +203,9 @@ void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 	IsFreeLooking = true;
 	FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
-	//FirstPersonCameraComponent->bUsePawnControlRotation = true;
+
+	// If we are using a True FPS Pawn, we "almost" always want this to be true.
+	FirstPersonCameraComponent->bUsePawnControlRotation = true;
 }
 
 void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
@@ -228,7 +231,9 @@ void APrototype1Character::ResetLook()
 	bUseControllerRotationYaw = true;
 
 	FirstPersonCameraComponent->SetRelativeRotation(FQuat::Identity);
-	//FirstPersonCameraComponent->bUsePawnControlRotation = false;
+
+	// If we are using a True FPS Pawn, we "almost" always want this to be true.
+	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 
 	IsFreeLooking = false;
 }
