@@ -570,22 +570,26 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	if (OutIsOverstretched)
 	{
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
-		//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
 
 		TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds);
 		// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
 
 		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
-		const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
+		// IMPORTANT: ShoulderRootDir is unused. See IMPORTANT notes below.
+		//const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
-		const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
+		// IMPORTANT: ArmDiff already is RootDeltaFix. So we are commenting this out.
+		//const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
 
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
-		RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
-		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+		// IMPORTANT: Commented code is how the equation was prior. But due to vector math I managed to reduce it to the following one.
+		//RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
+		RootDeltaFix = HandLocation + FixedArmVector - ShoulderOffset;
+		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
 	}
 
 	return OutArmVector;
