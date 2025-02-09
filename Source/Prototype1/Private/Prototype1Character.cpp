@@ -562,32 +562,36 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 
 	// Check if arm is stretched with added multiplier.
 	const float ArmMaxStretchedLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	const float ArmMinRelaxedLength = ArmMaxStretchedLength * ArmMinRelaxedT;
 	const float ArmMaxRelaxedLength = ArmMaxStretchedLength * ArmRelaxedT;
 	float ArmCurrentLength = OutArmVector.SizeSquared();
 
-	// Apply relaxed->overstretched spring.
-	// Need to tweak this verification. Currently, it is causing twitches, since its applying and not applying on consequential frames.
-	if (ArmCurrentLength >= ArmMaxRelaxedLength)
-	{
-		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Blue, TEXT("Applying arm spring to relaxed state"));
-		
-		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
-		ArmSpringForce += HandLocation + RelaxedArmVector - ShoulderOffset;
-
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmSpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
-	}
-	else
-	{
-		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Green, TEXT("Not applying arm spring to relaxed state"));
-	}
-	
 	const float StretchRatio = FMath::Max((ArmCurrentLength - ArmMaxStretchedLength) / ArmMaxStretchedLength, 0.0f);
 	OutIsOverstretched = ArmCurrentLength >= ArmMaxStretchedLength;
 
 	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("ArmCurrentLength: %f - ArmMaxRelaxedLength: %f - ArmMaxStretchedLength: %f - Stretch Ratio: %f"), ArmCurrentLength, ArmMaxRelaxedLength, ArmMaxStretchedLength, StretchRatio));
 	//GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
-		//Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
+	//Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
+	
+	// Apply relaxed->overstretched spring.
+	const float SpringReadiness = FMath::SmoothStep(ArmMinRelaxedLength, ArmMaxRelaxedLength, ArmCurrentLength);
+	GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Silver, FString::Printf(TEXT("SpringReadiness: %f"), SpringReadiness));
+	if (SpringReadiness > 0.0f)
+	{
+		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Blue, TEXT("Applying arm spring to relaxed state"));
+		
+		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
+		const FVector SpringForce = HandLocation + RelaxedArmVector - ShoulderOffset;
+		const FVector SpringForceProjected = FVector::VectorPlaneProject(SpringForce, HandNormal);
+		ArmSpringForce += SpringForce;
+
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + SpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Green, TEXT("Not applying arm spring to relaxed state"));
+	}
 
 	// If Arm is Overstretched (limb limit), then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (OutIsOverstretched)
@@ -616,7 +620,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// IMPORTANT: Commented code is how the equation was prior. But due to vector math I managed to reduce it to the following one.
 		//RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		RootDeltaFix = HandLocation + FixedArmVector - ShoulderOffset;
-		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Red, false, 0.25f, 0, 1.0f);
 	}
 
 	return OutArmVector;

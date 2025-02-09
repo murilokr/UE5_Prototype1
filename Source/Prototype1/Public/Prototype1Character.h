@@ -265,6 +265,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="1", UIMax="2", ClampMin="1", ClampMax="2"))
 	float ArmStretchMultiplier = 1.2f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	float ArmMinRelaxedT = 0.7f;
+	
 	// How much along the arm length is considered to be in a relaxed state.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
 	float ArmRelaxedT = 0.8f;

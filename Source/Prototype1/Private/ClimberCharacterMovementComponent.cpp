@@ -404,8 +404,8 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		//ClimbingAcceleration += ((ArmSpringForce * ArmSpringForceIntensity) + -Velocity * ArmSpringDampening) / Mass;
 		ClimbingAcceleration += ArmSpringAcceleration;
 
-		GEngine->AddOnScreenDebugMessage(2, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
+		GEngine->AddOnScreenDebugMessage(2 + HandIndex, 1.0f, FColor::Cyan, FString::Printf(TEXT("Applying (%i) arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+			HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
 	}
 	
 	// Snapping Root back to a acceptable shoulder distance from the hand.
@@ -417,9 +417,9 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		// Applying Force per Unit Acceleration
 		// No mass included, so this is used to "snap" the arm back into place once it's fully overstretched, this prevents the arm from going way further than intended
 		ClimbingAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
-		
-		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
+
+		GEngine->AddOnScreenDebugMessage(HandIndex, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying (%i) arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
 	}
 }
 
