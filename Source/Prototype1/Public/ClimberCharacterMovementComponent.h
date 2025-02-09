@@ -65,6 +65,9 @@ public:
 	float HandsControlAcceleration = 150.f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	bool bForceCharacterPullingWhenNotMoving = true;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float WallFriction = 1.3;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")

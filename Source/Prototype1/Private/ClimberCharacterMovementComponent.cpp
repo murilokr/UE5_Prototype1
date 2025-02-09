@@ -239,6 +239,16 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		ClimbingAcceleration += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
 
 		FVector HorizontalHandsControlAcceleration = Acceleration;
+		if (bForceCharacterPullingWhenNotMoving)
+		{
+			const FVector CharacterFoward = ClimberCharacterOwner->GetActorForwardVector();
+			const double InputDotActorForward = FVector::DotProduct(HorizontalHandsControlAcceleration, CharacterFoward);
+			if (InputDotActorForward > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
+			{
+				GEngine->AddOnScreenDebugMessage(135, 0.2f, FColor::Green, TEXT("Force pulling towards wall"));
+				HorizontalHandsControlAcceleration = ScaleInputAcceleration(CharacterFoward);
+			}
+		}
 
 		FVector HandSlipAcceleration = FVector::ZeroVector;
 
@@ -377,9 +387,6 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 
 	// Calculate HandControlAcceleration
 	HorizontalHandsControlAcceleration += GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, HandData);
-
-	// TODO: We can maybe have an extra acceleration before the Outstretched state, one that is the relaxed state and it slows down the arm movement
-	// so it tries to keep the arm in that position.
 
 	FVector RootDeltaFixHand = FVector::ZeroVector;
 	FVector ArmSpringForce = FVector::ZeroVector;

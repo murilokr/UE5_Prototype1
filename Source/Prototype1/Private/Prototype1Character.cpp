@@ -15,6 +15,20 @@
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
+namespace MFMath // Murilo's FMath
+{
+	// If a Vector is less than a unit vector, and we want to multiply it by a scalar, but making sure it won't exceed it's unit length.
+	FVector SafeMultiplyUnderUnitVector(const FVector &Vector, const float Scalar)
+	{
+		FVector Result = Vector * Scalar;
+		if (Result.Size() > 1)
+		{
+			Result = Result.GetSafeNormal();
+		}
+		return Result;
+	}
+};
+
 //////////////////////////////////////////////////////////////////////////
 // APrototype1Character
 
@@ -294,11 +308,14 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
 	const FVector MoveDir = -MouseInput;
-	ClimberMovementComponent->HandMoveDir += MoveDir;
+	// HandMoveDir should not exceed a unit vector, we only want the mouse sensitivity to help with the movement, but we can't exceed 1
+	// otherwise we would be applying more force than designed in our CMC
+	///ClimberMovementComponent->HandMoveDir += MFMath::SafeMultiplyUnderUnitVector(MoveDir, MouseClimbingSensitivity);
+	ClimberMovementComponent->HandMoveDir += MoveDir * MouseClimbingSensitivity;
 
 	// Debugs
-	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("%s"), *MouseInput.ToString()));
-	GEngine->AddOnScreenDebugMessage(1, 2.5f, FColor::Blue, FString::Printf(TEXT("%s"), *MoveDir.ToString()));
+	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("MouseInput: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MouseInput * MouseClimbingSensitivity).Length(), MouseInput.Length(), *MouseInput.ToString()));
+	GEngine->AddOnScreenDebugMessage(54, 2.5f, FColor::Blue, FString::Printf(TEXT("MoveDir: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MoveDir * MouseClimbingSensitivity).Length(), MoveDir.Length(), *MoveDir.ToString()));
 
 	/** GrabRot relative to HandLocation */
 	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
