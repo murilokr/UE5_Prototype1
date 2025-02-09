@@ -47,8 +47,16 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Character Movement: Climbing")
 	float MoveIntensityMultiplier = 2.0f;
 
+	// Arm Stretch Spring Constant. (Used to pull back the slightly overstretched arm into a relaxed state)
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
-	float ArmStretchIntensityMultiplier = 200.0f;
+	float ArmSpringForceIntensity = 4500.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	float ArmSpringDampening = 0.8f;
+	
+	// Arm Limit Acceleration Feedback. (Used to snap the overstretched arm back into place)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	float ArmStretchIntensityMultiplier = 550.0f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float GravityForce = 5000.0f;

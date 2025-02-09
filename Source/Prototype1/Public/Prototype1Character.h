@@ -187,8 +187,8 @@ public:
 	const FHandsContextData& GetHandData(int HandIndex) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix);
-	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix);
+	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce);
+	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce);
 
 	bool TryToSlipHand(FHandsContextData& HandData, const FVector& ArmVector, float ArmMaxRelaxedLength, float DeltaSeconds);
 
@@ -264,6 +264,10 @@ public:
 	// How much above ArmsLengthUnits are we going to allow when dragging given Min and Max angle.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="1", UIMax="2", ClampMin="1", ClampMax="2"))
 	float ArmStretchMultiplier = 1.2f;
+
+	// How much along the arm length is considered to be in a relaxed state.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	float ArmRelaxedT = 0.8f;
 
 	// The minimum angle from shoulder to hand (2D) to start sampling ArmStretchMultiplier with ArmStretchMultiplierCurve to apply onto ArmsLengthUnits.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))

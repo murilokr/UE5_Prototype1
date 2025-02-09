@@ -382,9 +382,10 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	// so it tries to keep the arm in that position.
 
 	FVector RootDeltaFixHand = FVector::ZeroVector;
+	FVector ArmSpringForce = FVector::ZeroVector;
 	FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 	bool IsArmOutstretched;
-	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaSeconds, BodyOffset, IsArmOutstretched, RootDeltaFixHand);
+	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaSeconds, BodyOffset, IsArmOutstretched, RootDeltaFixHand, ArmSpringForce);
 	if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
 	{
 		MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaSeconds, PrevHandObjectLocation, RootDeltaFixHand, this);
@@ -394,14 +395,29 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(HandData, Acc);	
 	}
 
+	// Relaxed Arm Spring
+	{
+		const FVector AccelWithoutArmSpring = ClimbingAcceleration;
+		
+		// Applying ArmSpring force to the acceleration. This is used to bring the arm back from a slightly stretched state to a relaxed state.
+		const FVector ArmSpringAcceleration = (ArmSpringForce * ArmSpringForceIntensity * 100.f) / Mass; // * 100.f is to counter-act gravity force. need to make this explicit.
+		//ClimbingAcceleration += ((ArmSpringForce * ArmSpringForceIntensity) + -Velocity * ArmSpringDampening) / Mass;
+		ClimbingAcceleration += ArmSpringAcceleration;
+
+		GEngine->AddOnScreenDebugMessage(2, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+			ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
+	}
+	
 	// Snapping Root back to a acceptable shoulder distance from the hand.
 	// In A Difficult Game About Climbing, when the arms get overstretched when going down, the grip point is moved, as if trying to grasp. (Going up is almost impossible because of gravity)
-	const bool bZeroRootDeltaFixHand = RootDeltaFixHand.IsZero();
-	if (!bZeroRootDeltaFixHand)
+	if (!RootDeltaFixHand.IsZero())
 	{
 		const FVector AccelWithoutArmStretch = ClimbingAcceleration;
+		
+		// Applying Force per Unit Acceleration
+		// No mass included, so this is used to "snap" the arm back into place once it's fully overstretched, this prevents the arm from going way further than intended
 		ClimbingAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
-
+		
 		GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
 			RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
 	}

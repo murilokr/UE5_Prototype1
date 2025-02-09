@@ -533,20 +533,24 @@ const FHandsContextData& APrototype1Character::GetHandData(int HandIndex) const
 	return HandData;
 }
 
-FVector APrototype1Character::CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix)
+FVector APrototype1Character::CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce)
 {
-	return CalculateArmConstraint(GetMutableHandData(HandIndex), DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix);
+	return CalculateArmConstraint(GetMutableHandData(HandIndex), DeltaSeconds, BodyOffset, OutIsOverstretched, RootDeltaFix, ArmSpringForce);
 }
 
-FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix)
+FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce)
 {
 	RootDeltaFix = FVector::ZeroVector;
+	ArmSpringForce = FVector::ZeroVector;
 
 	FVector HandLocation = GetSafeHandLocation(HandData);
 	const FVector HandNormal = HandData.GetHandNormal();
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
 	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
+
+	// Variable used for debugging only. (Add a pragma flag to dynamically remove this)
+	const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 
 	FVector OutArmVector = ShoulderOffset - HandLocation;
 	const FVector ArmVectorProjected = FVector::VectorPlaneProject(OutArmVector, HandNormal).GetSafeNormal();
@@ -557,25 +561,48 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	const float StretchMultiplier = FMath::Max(1 + (ArmStretchMultiplierCurve->GetFloatValue(AngleNormalized) * (ArmStretchMultiplier - 1)), 1.0f);
 
 	// Check if arm is stretched with added multiplier.
-	const float ArmMaxRelaxedLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	const float ArmMaxStretchedLength = FMath::Square(ArmsLengthUnits * StretchMultiplier);
+	const float ArmMaxRelaxedLength = ArmMaxStretchedLength * ArmRelaxedT;
 	float ArmCurrentLength = OutArmVector.SizeSquared();
-	const float StretchRatio = FMath::Max((ArmCurrentLength - ArmMaxRelaxedLength) / ArmMaxRelaxedLength, 0.0f);
-	OutIsOverstretched = ArmCurrentLength >= ArmMaxRelaxedLength;
 
-	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Stretch Ratio: %f"), StretchRatio));
+	// Apply relaxed->overstretched spring.
+	// Need to tweak this verification. Currently, it is causing twitches, since its applying and not applying on consequential frames.
+	if (ArmCurrentLength >= ArmMaxRelaxedLength)
+	{
+		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Blue, TEXT("Applying arm spring to relaxed state"));
+		
+		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
+		ArmSpringForce += HandLocation + RelaxedArmVector - ShoulderOffset;
+
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
+		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmSpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
+	}
+	else
+	{
+		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Green, TEXT("Not applying arm spring to relaxed state"));
+	}
+	
+	const float StretchRatio = FMath::Max((ArmCurrentLength - ArmMaxStretchedLength) / ArmMaxStretchedLength, 0.0f);
+	OutIsOverstretched = ArmCurrentLength >= ArmMaxStretchedLength;
+
+	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("ArmCurrentLength: %f - ArmMaxRelaxedLength: %f - ArmMaxStretchedLength: %f - Stretch Ratio: %f"), ArmCurrentLength, ArmMaxRelaxedLength, ArmMaxStretchedLength, StretchRatio));
 	//GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
 		//Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
 
-	// If Arm is Overstretched, then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
+	// If Arm is Overstretched (limb limit), then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (OutIsOverstretched)
 	{
+		GEngine->AddOnScreenDebugMessage(77, 0.1f, FColor::Red, TEXT("Applying arm limit snap."));
+		
+		// Stretched visualization.
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - ShoulderOffset, 1.0f, FColor::Red, false, 0.25f, 1, 1.0f);
+		
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 0, 0.5f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 5, 0.5f);
 
 		TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds);
 		// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
-
-		const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
+		
 		// IMPORTANT: ShoulderRootDir is unused. See IMPORTANT notes below.
 		//const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
 		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
@@ -589,7 +616,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// IMPORTANT: Commented code is how the equation was prior. But due to vector math I managed to reduce it to the following one.
 		//RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		RootDeltaFix = HandLocation + FixedArmVector - ShoulderOffset;
-		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
+		//DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Blue, false, 0.25f, 0, 1.0f);
 	}
 
 	return OutArmVector;
