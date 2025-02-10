@@ -238,35 +238,30 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		FVector ClimbingAcceleration = FVector::ZeroVector;
 		ClimbingAcceleration += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
 
-		FVector HorizontalHandsControlAcceleration = Acceleration;
+		FVector HorizontalHandsControlAcceleration = Acceleration.GetSafeNormal();
 		if (bForceCharacterPullingWhenNotMoving)
 		{
 			const FVector CharacterFoward = ClimberCharacterOwner->GetActorForwardVector();
 			const double InputDotActorForward = FVector::DotProduct(HorizontalHandsControlAcceleration, CharacterFoward);
 			if (InputDotActorForward > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
 			{
-				GEngine->AddOnScreenDebugMessage(135, 0.2f, FColor::Green, TEXT("Force pulling towards wall"));
+				GEngine->AddOnScreenDebugMessage(136, 0.2f, FColor::Green, TEXT("Force pulling towards wall"));
 				HorizontalHandsControlAcceleration = ScaleInputAcceleration(CharacterFoward);
 			}
 		}
 
 		FVector HandSlipAcceleration = FVector::ZeroVector;
 
-		const float MaxDecel = GetMaxBrakingDeceleration();
-
 		// Calculates velocity if not being controlled by root motion.
 		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
 		{
-			const float MaxSpeed = GetMaxSpeed();
-
-			ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
-			HandMoveDir = FVector::ZeroVector;
-
-			GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
-
-			//FVector SnapArmsVector;
 			if (ClimberCharacterOwner)
 			{
+				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+				
+				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
+				HandMoveDir = FVector::ZeroVector;
+			
 				FVector BodyOffset = (Velocity + HandSlipVelocity) * timeTick;
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
 				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
@@ -293,6 +288,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				AnalogInputModifier = FMath::Clamp<FVector::FReal>(ClimbingAcceleration.Size() / GetMaxAcceleration(), 0.f, 1.f);
 				const FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration;
 
+				const float MaxDecel = GetMaxBrakingDeceleration();
+
 				// Acceleration = FinalAcceleration when inside CalcVelocity, and returns to it's original state afterwards.
 				TGuardValue<FVector> RestoreAcceleration(Acceleration, FinalAcceleration);
 				CalcVelocity(timeTick, WallFriction, true, MaxDecel);
@@ -315,6 +312,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			}
 
 			// Add HandSlipVelocity to Velocity
+			const float MaxSpeed = GetMaxSpeed();
 			const float NewMaxInputSpeed = IsExceedingMaxSpeed(MaxSpeed) ? Velocity.Size() : MaxSpeed;
 			//Velocity += HandSlipVelocity;
 			Velocity = Velocity.GetClampedToMaxSize(NewMaxInputSpeed);

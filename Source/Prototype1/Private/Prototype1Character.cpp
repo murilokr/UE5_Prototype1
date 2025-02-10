@@ -302,6 +302,7 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FVector HandNormal = HandData.GetHandNormal();
+	// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandNormal);
 	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
 
@@ -353,6 +354,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	}
 
 	// Calculating VerticalExtension that goes from 1 to 2. This is to increase a bit on the trace distance if looking upwards.
+	// TODO: Remove TraceVerticalExtension entirely, this can cause the unintended "leap" bug.
 	const float TraceVerticalExtension = FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
 	GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
 
