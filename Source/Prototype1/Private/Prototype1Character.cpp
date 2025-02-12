@@ -87,6 +87,9 @@ void APrototype1Character::BeginPlay()
 	// the extra colliders instead of only the default CapsuleCollider.
 	GetCapsuleComponent()->SetSimulatePhysics(false);
 
+	// Maybe have an initializer for a few gameplay states.
+	bIsAlive = true;
+
 	RightHandData.HandIndex = 0;
 	LeftHandData.HandIndex = 1;
 
@@ -155,6 +158,7 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
 
+	// Need to convert all these timers into a class, or struct.
 	if (IsLookingBack())
 	{
 		LookBackTimer -= DeltaSeconds;
@@ -163,7 +167,19 @@ void APrototype1Character::Tick(float DeltaSeconds)
 			ResetLook();
 		}
 	}
-
+	
+	if (FallToDeathTimer > 0.f)
+	{
+		GEngine->AddOnScreenDebugMessage(27, 3.5f, FColor::Red, FString::Printf(TEXT("Falling to death in: %fs"), FallToDeathTimer));
+		FallToDeathTimer -= DeltaSeconds;
+		if (FallToDeathTimer <= 0.f)
+		{
+			FallToDeathTimer = 0.f;
+			bIsAlive = false; // Move this inside OnFallDeath_Implementation
+			OnFallDeath();
+		}
+	}
+	
 	if (CoyoteTimer > 0.f)
 	{
 		CoyoteTimer -= DeltaSeconds;
@@ -193,6 +209,18 @@ void APrototype1Character::ReleaseHand(int HandIndex)
 void APrototype1Character::ReleaseHand(const FHandsContextData& HandData)
 {
 	StopGrabbing(HandData.HandIndex);
+}
+
+void APrototype1Character::StartFallingToDeathTime()
+{
+	FallToDeathTimer = FallToDeathTimeDuration;
+	GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Red, TEXT("Start Falling to Death Time"));
+}
+
+void APrototype1Character::StopFallingToDeathTime()
+{
+	FallToDeathTimer = 0.f;
+	GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Green, TEXT("Stop Falling to Death Time"));
 }
 
 void APrototype1Character::StartCoyoteTime()

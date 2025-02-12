@@ -162,15 +162,24 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	UInputAction* GrabActionR;
 
+	/** Death Properties */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay, meta = (AllowPrivateAccess = "true"))
+	float FallToDeathTimeDuration = 1.35f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay, meta = (AllowPrivateAccess = "true"))
+	float FallToDeathMinSpeed = -550.f;
+	/** Death Properties */
+	
+	/** Game Feel Improvements */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = Input, meta = (AllowPrivateAccess = "true"))
 	float MouseClimbingSensitivity = 1.0f;
-
-	/** Game Feel Improvements */
+	
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = Gameplay, meta = (AllowPrivateAccess = "true"))
 	float CoyoteTimeDuration = 0.275f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
 	float GrabInputBufferDuration = 0.75f;
+	/** Game Feel Improvements */
 	
 	APrototype1Character(const FObjectInitializer& ObjectInitializer);
 
@@ -178,6 +187,9 @@ public:
 	USkeletalMeshComponent* GetMesh1P() const { return Mesh1P; }
 	/** Returns FirstPersonCameraComponent subobject **/
 	UCameraComponent* GetFirstPersonCameraComponent() const { return FirstPersonCameraComponent; }
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void OnFallDeath();
 
 	UFUNCTION(BlueprintImplementableEvent)
 	void OnStartGrab(const FHandsContextData& HandData, int HandIndex);
@@ -247,6 +259,19 @@ public:
 
 	FRotator GetFreeLookPreviousControlRotation() const { return FreeLookControlRotation; };
 	/** End of Free Look Functions */
+
+	UFUNCTION(BlueprintPure)
+	bool IsAlive() const { return bIsAlive; }
+	
+	// If the time is ticking for us to fall to the death
+	UFUNCTION(BlueprintPure)
+	bool IsAlmostFallingToDeath() const { return FallToDeathTimer > 0.f; }
+	
+	UFUNCTION(BlueprintCallable)
+	void StartFallingToDeathTime();
+
+	UFUNCTION(BlueprintCallable)
+	void StopFallingToDeathTime();
 
 	UFUNCTION(BlueprintCallable)
 	void StartCoyoteTime();
@@ -400,6 +425,9 @@ protected:
 
 private:
 
+	bool bIsAlive;
+	float FallToDeathTimer = 0.f;
+	
 	FRotator FreeLookControlRotation;
 	float LookBackTimer = 0.f;
 

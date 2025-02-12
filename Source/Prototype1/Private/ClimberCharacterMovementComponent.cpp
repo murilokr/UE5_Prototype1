@@ -170,6 +170,10 @@ void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode Pre
 				ClimberCharacterOwner->StopCoyoteTime();
 			}
 		}
+		else if (PreviousMovementMode == MOVE_Falling)
+		{
+			ClimberCharacterOwner->StopFallingToDeathTime();
+		}
 	}
 
 	Super::OnMovementModeChanged(PreviousMovementMode, PreviousCustomMode);
@@ -190,6 +194,12 @@ void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, c
 		const bool bWasJumping = ClimberCharacterOwner->bWasJumping || ClimberCharacterOwner->bPressedJump;
 		if (MovementMode == MOVE_Falling)
 		{
+			GEngine->AddOnScreenDebugMessage(26, 3.5f, FColor::Yellow, FString::Printf(TEXT("Falling velocity: %f"), Velocity.Z));
+			if (!ClimberCharacterOwner->IsAlmostFallingToDeath() && Velocity.Z < ClimberCharacterOwner->FallToDeathMinSpeed)
+			{
+				ClimberCharacterOwner->StartFallingToDeathTime();
+			}
+			
 			if (bWasJumping)
 			{
 				ClimberCharacterOwner->StopCoyoteTime();
@@ -258,6 +268,11 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			if (ClimberCharacterOwner)
 			{
 				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+
+				// If HandMoveDir is nearly zero, we are going to add a temporary virtual arm spring, to try and keep the player in the same position for a few frames.
+				// It actually needs to be processed over a few frames, as we need to keep updating this virtual arm spring target. When should it be active?
+				// Should it be one "extra" arm that does the load for the two arms? Or as an extra spring for each arm, but with lower force?
+				// The force of the spring should deteriorate over the period of this virtual arm spring existence, so that over time the force get lower until it releases. 
 				
 				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 				HandMoveDir = FVector::ZeroVector;

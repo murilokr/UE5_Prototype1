@@ -52,36 +52,47 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(OwningController->GetPawn()))
 		{
-			// Handle LookBack
-			if (ClimberCharacter->IsLookingBack())
+			if (ClimberCharacter->IsAlive())
 			{
-				const float Blend = ClimberCharacter->GetLookBackBlend();
-
-				FRotator NewControlRotation = FMath::Lerp(OwningController->GetControlRotation(), ClimberCharacter->GetFreeLookPreviousControlRotation(), Blend);
-				if (NewControlRotation.Equals(OwningController->GetControlRotation(), 1e-3f))
+				// Handle LookBack
+				if (ClimberCharacter->IsLookingBack())
 				{
-					UE_LOG(LogTemp, Display, TEXT("NewControlRotation is equals to ControlRotation. EARLY OUT!"));
-					ClimberCharacter->ResetLook();
+					const float Blend = ClimberCharacter->GetLookBackBlend();
+
+					FRotator NewControlRotation = FMath::Lerp(OwningController->GetControlRotation(), ClimberCharacter->GetFreeLookPreviousControlRotation(), Blend);
+					if (NewControlRotation.Equals(OwningController->GetControlRotation(), 1e-3f))
+					{
+						UE_LOG(LogTemp, Display, TEXT("NewControlRotation is equals to ControlRotation. EARLY OUT!"));
+						ClimberCharacter->ResetLook();
+					}
+					else
+					{
+						OwningController->SetControlRotation(NewControlRotation);
+
+						const FQuat FPRelativeRotation = FQuat::Slerp(ClimberCharacter->FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Blend);
+						ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+					}
 				}
-				else
-				{
-					OwningController->SetControlRotation(NewControlRotation);
 
-					const FQuat FPRelativeRotation = FQuat::Slerp(ClimberCharacter->FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Blend);
-					ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+				// Deal with rotating the MeshPivot
+				// TODO: Have the body rotate towards first hand normal
+				if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
+				{
+					const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
+					UStaticMeshComponent* MeshPivot = ClimberCharacter->MeshPivot;
+					if (!PawnViewRotation.Equals(MeshPivot->GetComponentRotation()))
+					{
+						MeshPivot->SetWorldRotation(PawnViewRotation);
+					}
 				}
 			}
-
-			// Deal with rotating the MeshPivot
-			// TODO: Have the body rotate towards first hand normal
-			if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
+			else
 			{
-				const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
-				UStaticMeshComponent* MeshPivot = ClimberCharacter->MeshPivot;
-				if (!PawnViewRotation.Equals(MeshPivot->GetComponentRotation()))
-				{
-					MeshPivot->SetWorldRotation(PawnViewRotation);
-				}
+				GEngine->AddOnScreenDebugMessage(125, 0.15, FColor::Red, TEXT("Climber camera is not alive!"));
+				
+				const FVector RagdollDirection = (ClimberCharacter->GetMesh()->GetComponentLocation() - ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation()).GetSafeNormal();
+				const FRotator Ragdoll = FRotationMatrix::MakeFromX(RagdollDirection).Rotator();
+				OwningController->SetControlRotation(Ragdoll);
 			}
 
 			if (OutVT.Target)
