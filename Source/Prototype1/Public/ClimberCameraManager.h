@@ -14,6 +14,8 @@ public:
 
 	virtual void BeginPlay() override;
 
+	void StartDeathCam();
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
 	bool UseCustomLagFunction = true;
 
@@ -23,6 +25,18 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", meta = (editcondition = "UseCustomLagFunction", ClampMin = "0.0", UIMin = "0.0"))
 	float CameraLagMaxDistance;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager")
+	bool UseDeathCam = true;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", meta = (editcondition = "UseDeathCam"))
+	float DeathCamDuration = 4.5f;
+	
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", meta = (editcondition = "UseDeathCam"))
+	float DeathFOV = 25.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climber Camera Manager", meta = (editcondition = "UseDeathCam"))
+	FVector DeathCamOffset = FVector(0, 0, 50);
+	
 	/**
 	 * If UseCameraLagSubstepping is true, sub-step camera damping so that it handles fluctuating frame rates well (though this comes at a cost).
 	 * @see CameraLagMaxTimeStep and USpringArmComponent
@@ -42,4 +56,10 @@ private:
 	FVector Velocity;
 
 	FMinimalViewInfo OldPOV;
+
+	float InitialFOV;
+
+	// Death Cam Stuff
+	float DeathCamTimer = 0.f;
+	FVector AliveCamLocation = FVector::ZeroVector;
 };

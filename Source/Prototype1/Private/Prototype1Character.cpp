@@ -13,6 +13,8 @@
 #include <Kismet/KismetSystemLibrary.h>
 #include <Kismet/KismetMathLibrary.h>
 
+#include "ClimberCameraManager.h"
+
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 namespace MFMath // Murilo's FMath
@@ -174,8 +176,6 @@ void APrototype1Character::Tick(float DeltaSeconds)
 		FallToDeathTimer -= DeltaSeconds;
 		if (FallToDeathTimer <= 0.f)
 		{
-			FallToDeathTimer = 0.f;
-			bIsAlive = false; // Move this inside OnFallDeath_Implementation
 			OnFallDeath();
 		}
 	}
@@ -293,6 +293,12 @@ float APrototype1Character::GetLookBackBlend() const
 
 void APrototype1Character::Look(const FInputActionValue& Value)
 {
+	// Doesn't process any camera inputs for death.
+	if (!bIsAlive)
+	{
+		return;
+	}
+	
 	// input is a Vector2D
 	FVector2D LookAxisVector = Value.Get<FVector2D>();
 
@@ -317,6 +323,20 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 		if (CanUsePitch(Delta, LookAxisVector.Y))
 		{
 			AddControllerPitchInput(LookAxisVector.Y);
+		}
+	}
+}
+
+void APrototype1Character::OnFallDeath_Implementation()
+{
+	FallToDeathTimer = 0.f;
+	bIsAlive = false;
+	
+	if (APlayerController* PlayerController = Cast<APlayerController>(GetController()))
+	{
+		if (AClimberCameraManager* ClimberCameraManager = Cast<AClimberCameraManager>(PlayerController->PlayerCameraManager))
+		{
+			ClimberCameraManager->StartDeathCam();
 		}
 	}
 }

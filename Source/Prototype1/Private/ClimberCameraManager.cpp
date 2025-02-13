@@ -44,14 +44,41 @@ AClimberCameraManager::AClimberCameraManager()
 void AClimberCameraManager::BeginPlay()
 {
 	CameraLagMaxTimeStep = FMath::Max(CameraLagMaxTimeStep, 1.f / 200.f);
-}
 
-void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime)
-{
 	if (AController* OwningController = GetOwningPlayerController())
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(OwningController->GetPawn()))
 		{
+			InitialFOV = ClimberCharacter->FirstPersonCameraComponent->FieldOfView;
+			AliveCamLocation = ClimberCharacter->FirstPersonCameraComponent->GetRelativeLocation();
+		}
+	}
+}
+
+void AClimberCameraManager::StartDeathCam()
+{
+	if (!UseDeathCam)
+	{
+		return;
+	}
+
+	DeathCamTimer = DeathCamDuration;
+}
+
+void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float DeltaTime)
+{
+	if (OutVT.Target)
+	{
+		// Super implementation.
+		OutVT.Target->CalcCamera(DeltaTime, OutVT.POV);
+	}
+	
+	if (AController* OwningController = GetOwningPlayerController())
+	{
+		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(OwningController->GetPawn()))
+		{
+
+			// Need to understand if CameraModifiers can do this type of camera work, that way it can save us a lot of time when doing the "Focus At" feature.
 			if (ClimberCharacter->IsAlive())
 			{
 				// Handle LookBack
@@ -86,19 +113,29 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 					}
 				}
 			}
-			else
+			else if (UseDeathCam)
 			{
-				GEngine->AddOnScreenDebugMessage(125, 0.15, FColor::Red, TEXT("Climber camera is not alive!"));
-				
+				float DeathCamBlend = 1.f;
+				if (DeathCamTimer > 0.f)
+				{
+					// Calculate Blend
+					DeathCamTimer -= DeltaTime;
+					DeathCamTimer = FMath::Max(DeathCamTimer, 0.f);
+					DeathCamBlend = 1.f - FMath::Clamp(DeathCamTimer / DeathCamDuration, 0.f, 1.f);
+				}
+
+				// Start to move camera towards relative offset (might be upwards a bit) (we also might want to have two different blend modes here).
+				const FVector CameraOffset = FMath::Lerp(AliveCamLocation, AliveCamLocation + DeathCamOffset, DeathCamBlend);
+				ClimberCharacter->FirstPersonCameraComponent->SetRelativeLocation(CameraOffset);
+
+				// Point camera towards dead body
 				const FVector RagdollDirection = (ClimberCharacter->GetMesh()->GetComponentLocation() - ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation()).GetSafeNormal();
 				const FRotator Ragdoll = FRotationMatrix::MakeFromX(RagdollDirection).Rotator();
+				DrawDebugCoordinateSystem(GetWorld(), ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation(), Ragdoll, 10.0f, false, 0.016f, 0, 1.0f);
 				OwningController->SetControlRotation(Ragdoll);
-			}
-
-			if (OutVT.Target)
-			{
-				// Super implementation.
-				OutVT.Target->CalcCamera(DeltaTime, OutVT.POV);
+					
+				// Start changing the FOV
+				OutVT.POV.FOV = FMath::Lerp(InitialFOV, DeathFOV, DeathCamBlend);
 			}
 
 			if (UseCustomLagFunction)
@@ -151,11 +188,6 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 				}
 			}
 		}
-	}
-	else if (OutVT.Target)
-	{
-		// Super implementation.
-		OutVT.Target->CalcCamera(DeltaTime, OutVT.POV);
 	}
 
 	//ViewTarget.Target.Get()
