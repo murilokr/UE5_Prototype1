@@ -301,7 +301,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			// Compute Velocity by applying ClimbingAcceleration and HorizontalHandsControlAcceleration.
 			{
 				AnalogInputModifier = FMath::Clamp<FVector::FReal>(ClimbingAcceleration.Size() / GetMaxAcceleration(), 0.f, 1.f);
-				const FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration;
+				FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration;
 
 				const float MaxDecel = GetMaxBrakingDeceleration();
 
@@ -415,6 +415,8 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(HandData, Acc);	
 	}
 
+	FVector HandAcceleration = FVector::ZeroVector;
+	
 	// Relaxed Arm Spring
 	{
 		const FVector AccelWithoutArmSpring = ClimbingAcceleration;
@@ -422,7 +424,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		// Applying ArmSpring force to the acceleration. This is used to bring the arm back from a slightly stretched state to a relaxed state.
 		const FVector ArmSpringAcceleration = (ArmSpringForce * ArmSpringForceIntensity * 100.f) / Mass; // * 100.f is to counter-act gravity force. need to make this explicit.
 		//ClimbingAcceleration += ((ArmSpringForce * ArmSpringForceIntensity) + -Velocity * ArmSpringDampening) / Mass;
-		ClimbingAcceleration += ArmSpringAcceleration;
+		HandAcceleration += ArmSpringAcceleration;
 
 		GEngine->AddOnScreenDebugMessage(2 + HandIndex, 1.0f, FColor::Cyan, FString::Printf(TEXT("Applying (%i) arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
 			HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
@@ -436,11 +438,18 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		
 		// Applying Force per Unit Acceleration
 		// No mass included, so this is used to "snap" the arm back into place once it's fully overstretched, this prevents the arm from going way further than intended
-		ClimbingAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
+		HandAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
 
 		GEngine->AddOnScreenDebugMessage(HandIndex, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying (%i) arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
 			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
 	}
+
+	// GEngine->AddOnScreenDebugMessage(37, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) Before: %f"), HandAcceleration.Length()));
+	// // Should this clamp be separate from Climbing and Horizontal?? (TODO: THIS MIGHT CAUSE A BUG BUG BUG!!!! (All these bugs are tags for me to find in the future in case it really does occur))
+	// HandAcceleration = HandAcceleration.GetClampedToMaxSize(GetMaxAcceleration());
+	// GEngine->AddOnScreenDebugMessage(38, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) After: %f"), HandAcceleration.Length()));
+
+	ClimbingAcceleration += HandAcceleration;
 }
 
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
