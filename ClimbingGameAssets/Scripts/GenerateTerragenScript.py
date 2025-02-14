@@ -28,10 +28,10 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Generate sequence of CamPos lines with increasing z value.')
     
     # Default CamPos parameters
-    parser.add_argument('initial_campos', nargs='?', type=str, default='164, 223, 45.647', help='Initial CamPos value as "x, y, z"')
+    parser.add_argument('initial_campos', nargs='?', type=str, default='164, 223, 58.913', help='Initial CamPos value as "x, y, z"')
     
     # Number of frames to generate
-    parser.add_argument('num_frames', nargs='?', type=int, default=100, help='Number of frames to generate')
+    parser.add_argument('num_frames', nargs='?', type=int, default=200, help='Number of frames to generate')
     
     # Meters per frame
     parser.add_argument('meters_per_frame', nargs='?', type=int, default='1', help='How many meters we will render per frame')

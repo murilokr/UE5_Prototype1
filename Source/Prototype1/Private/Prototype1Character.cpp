@@ -388,6 +388,12 @@ void APrototype1Character::Grab(int HandIndex)
 		return;
 	}
 
+	if (!IsGrabbing())
+	{
+		// Store new ControlRotation to face the wall.
+
+	}
+
 	SetElbowSetup(HandIndex, ESETUP_Climbing);
 
 	HandData.IsGrabbing = true;
