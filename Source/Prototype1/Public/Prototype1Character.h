@@ -429,6 +429,9 @@ protected:
 
 private:
 
+	// Anim FPS Limit
+	float ElbowDeltaSeconds = 0.f;
+
 	bool bIsAlive;
 	float FallToDeathTimer = 0.f;
 	

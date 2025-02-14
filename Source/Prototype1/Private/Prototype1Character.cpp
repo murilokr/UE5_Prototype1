@@ -157,8 +157,13 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	TraceForHand(RightHandData);
 	TraceForHand(LeftHandData);
 
-	InterpHandsAndElbow(0, DeltaSeconds);
-	InterpHandsAndElbow(1, DeltaSeconds);
+	ElbowDeltaSeconds += DeltaSeconds;
+	if (ElbowDeltaSeconds > (1/20.f))
+	{
+		InterpHandsAndElbow(0, ElbowDeltaSeconds);
+		InterpHandsAndElbow(1, ElbowDeltaSeconds);
+		ElbowDeltaSeconds -= 1/20.f;
+	}
 
 	// Need to convert all these timers into a class, or struct.
 	if (IsLookingBack())
