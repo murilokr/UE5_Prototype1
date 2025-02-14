@@ -218,6 +218,52 @@ void UClimberCharacterMovementComponent::PhysCustom(float DeltaSeconds, int32 It
 	Super::PhysCustom(DeltaSeconds, Iterations);
 }
 
+void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementTowardsGrabLocation(FVector& HorizontalHandsControlAcceleration)
+{
+	bool IsInFrontOfHands = false;
+	
+	const FVector CharacterForward = ClimberCharacterOwner->GetActorForwardVector();
+
+	// We are now going to check if we are going in front of the hands, and if we are, stop forcing "forward" horizontal movement.
+	float RightHandMeshDir = 1.f;
+	if (ClimberCharacterOwner->IsHandGrabbing(0))
+	{
+		const FVector MeshToRightHand = (ClimberCharacterOwner->GetHandLocation(0) - ClimberCharacterOwner->GetActorLocation()).GetSafeNormal();
+		RightHandMeshDir = FVector::DotProduct(CharacterForward, MeshToRightHand);
+		if (FMath::IsNearlyZero(RightHandMeshDir, 0.05f))
+		{
+			GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("RightHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), RightHandMeshDir));
+			return;
+		}
+		
+		IsInFrontOfHands |= RightHandMeshDir <= 0;
+	}
+	
+	float LeftHandMeshDir = 1.f;
+	if (ClimberCharacterOwner->IsHandGrabbing(1))
+	{
+		const FVector MeshToLeftHand = (ClimberCharacterOwner->GetHandLocation(1) - ClimberCharacterOwner->GetActorLocation()).GetSafeNormal();
+		LeftHandMeshDir = FVector::DotProduct(CharacterForward, MeshToLeftHand);
+		if (FMath::IsNearlyZero(LeftHandMeshDir, 0.05f))
+		{
+			GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("LeftHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), LeftHandMeshDir));
+			return;
+		}
+		
+		IsInFrontOfHands |= LeftHandMeshDir <= 0;
+	}
+	
+	GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Blue, FString::Printf(TEXT("RightHandMeshDir: %f - LeftHandMeshDir: %f - IsInFrontOfHands: %hhd"), RightHandMeshDir, LeftHandMeshDir, IsInFrontOfHands));
+
+	const FVector ForceInputDirection = IsInFrontOfHands ? -CharacterForward : CharacterForward;
+	const double IsPlayerInputOpposite = FVector::DotProduct(HorizontalHandsControlAcceleration, ForceInputDirection);
+	if (IsPlayerInputOpposite > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
+	{
+		GEngine->AddOnScreenDebugMessage(136, 0.2f, FColor::Green, (IsInFrontOfHands) ? TEXT("Force pushing against wall") : TEXT("Force pulling towards wall"));
+		HorizontalHandsControlAcceleration = ScaleInputAcceleration(ForceInputDirection);
+	}
+}
+
 void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 Iterations)
 {
 	if (DeltaSeconds < MIN_TICK_TIME)
@@ -251,13 +297,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		FVector HorizontalHandsControlAcceleration = Acceleration.GetSafeNormal();
 		if (bForceCharacterPullingWhenNotMoving)
 		{
-			const FVector CharacterFoward = ClimberCharacterOwner->GetActorForwardVector();
-			const double InputDotActorForward = FVector::DotProduct(HorizontalHandsControlAcceleration, CharacterFoward);
-			if (InputDotActorForward > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
-			{
-				GEngine->AddOnScreenDebugMessage(136, 0.2f, FColor::Green, TEXT("Force pulling towards wall"));
-				HorizontalHandsControlAcceleration = ScaleInputAcceleration(CharacterFoward);
-			}
+			ForcePullOrPushHorizontalMovementTowardsGrabLocation(HorizontalHandsControlAcceleration);
 		}
 
 		FVector HandSlipAcceleration = FVector::ZeroVector;

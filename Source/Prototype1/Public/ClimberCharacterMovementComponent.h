@@ -31,6 +31,7 @@ private:
 	virtual void OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode) override;
 	virtual void OnMovementUpdated(float DeltaSeconds, const FVector& OldLocation, const FVector& OldVelocity) override;
 	virtual void PhysCustom(float DeltaSeconds, int32 Iterations) override;
+	void ForcePullOrPushHorizontalMovementTowardsGrabLocation(FVector& HorizontalHandsControlAcceleration);
 
 	void PhysClimbing(float DeltaSeconds, int32 Iterations);
 	bool IsClimbing() const;

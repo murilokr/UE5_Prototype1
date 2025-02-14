@@ -231,6 +231,10 @@ public:
 	// IsGrabbing
 	UFUNCTION(BlueprintPure)
 	bool IsGrabbing() const;
+	
+	UFUNCTION(BlueprintPure)
+	bool IsHandGrabbing(int HandIndex) const;
+	bool IsHandGrabbing(const FHandsContextData& HandData) const;
 
 	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
 

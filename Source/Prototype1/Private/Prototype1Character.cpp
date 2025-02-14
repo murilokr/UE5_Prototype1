@@ -849,6 +849,16 @@ bool APrototype1Character::IsGrabbing() const
 	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;
 }
 
+bool APrototype1Character::IsHandGrabbing(int HandIndex) const
+{
+	return IsHandGrabbing((HandIndex == 0) ? RightHandData : LeftHandData);
+}
+
+bool APrototype1Character::IsHandGrabbing(const FHandsContextData& HandData) const
+{
+	return HandData.IsGrabbing;
+}
+
 FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
 {
 	const FVector HandLocation = HandData.GetHandLocation();
