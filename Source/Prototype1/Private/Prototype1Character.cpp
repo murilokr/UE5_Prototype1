@@ -193,11 +193,20 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
-	if (Controller != nullptr)
+	// Add a directive for debug mode only here.
+	if (ClimberMovementComponent->MovementMode != MOVE_Flying)
 	{
-		// add movement 
-		AddMovementInput(GetActorForwardVector(), MovementVector.Y);
-		AddMovementInput(GetActorRightVector(), MovementVector.X);
+		if (Controller != nullptr)
+		{
+			// add movement 
+			AddMovementInput(GetActorForwardVector(), MovementVector.Y);
+			AddMovementInput(GetActorRightVector(), MovementVector.X);
+		}
+	}
+	else
+	{
+		AddMovementInput(FirstPersonCameraComponent->GetForwardVector(), MovementVector.Y);
+		AddMovementInput(FirstPersonCameraComponent->GetRightVector(), MovementVector.X);
 	}
 }
 
