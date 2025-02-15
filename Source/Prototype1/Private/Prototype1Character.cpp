@@ -123,9 +123,12 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	// Set up action bindings
 	if (UEnhancedInputComponent* EnhancedInputComponent = Cast<UEnhancedInputComponent>(PlayerInputComponent))
 	{
-		// Jumping
-		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Started, this, &ACharacter::Jump);
+		// Jumping (fly up)
+		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Triggered, this, &APrototype1Character::Jump);
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
+
+		// Ducking (fly down)
+		EnhancedInputComponent->BindAction(DuckAction, ETriggerEvent::Triggered, this, &APrototype1Character::Duck);
 
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &APrototype1Character::Move);
@@ -207,6 +210,29 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 	{
 		AddMovementInput(FirstPersonCameraComponent->GetForwardVector(), MovementVector.Y);
 		AddMovementInput(FirstPersonCameraComponent->GetRightVector(), MovementVector.X);
+	}
+}
+
+void APrototype1Character::Jump()
+{
+	// Since this comes from an EnhancedInput of Triggered,
+	// we can only call the actual jump function only once (the first time you press the jump key) before letting the key go
+	if (!bPressedJump)
+	{
+		Super::Jump();
+	}
+
+	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
+	{
+		AddMovementInput(FVector::UpVector, 1.0f);
+	}
+}
+
+void APrototype1Character::Duck()
+{
+	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
+	{
+		AddMovementInput(FVector::UpVector, -1.0f);
 	}
 }
 
