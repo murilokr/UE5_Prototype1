@@ -10,6 +10,7 @@
 
 #include "Prototype1Character.generated.h"
 
+struct FKSphylElem;
 class UCameraComponent;
 class UInputComponent;
 class UInputAction;
@@ -59,8 +60,18 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
 	bool IsGrabbing;
 
+	// This will also be used for interactables. (Maybe have an interact type? i.e: climbing surface, interact, physical object grab, etc.)
+	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
+	bool CanInteract;
+
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
-	FName ShoulderBoneName = "upperarm_r";
+	FName ClavicleBoneName = "clavicle_r";
+
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	FName UpperArmBoneName = "upperarm_r";
+
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	FName HandBoneName = "hand_r";
 
 	// Maybe we'll remove this.
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
@@ -92,6 +103,9 @@ struct FHandsContextData
 
 	FQuat WorldToHandTransform;
 	FQuat HandToWorldTransform;
+
+	// Actual hand hitbox.
+	FKSphylElem* HandCollisionPrimitive = nullptr;
 
 	// Hand Location
 	FVector GetHandLocation() const;
@@ -129,6 +143,9 @@ public:
 	/** Pawn mesh: 1st person view (arms; seen only by self) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category=Mesh, meta = (AllowPrivateAccess = "true"))
 	USkeletalMeshComponent* Mesh1P;
+
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, Transient, meta = (AllowPrivateAccess = "true"))
+	UPhysicsAsset* Mesh1PPhysicsAsset;
 
 	/** First person camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
@@ -327,9 +344,16 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float HandSafeZone = 10.0f;
 
+	// This is actually the Physical Length of the line segment. Add radius for both ends to compute total length (aka: height)
+	// Deprecated. See @HandsContextData.HandCollisionPrimitive
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
-	float HandPhysicalHeight = 9.635022f;
+	float HandPhysicalLength = 9.635022f;
 
+	// Deprecated. See @HandsContextData.HandCollisionPrimitive
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float HandPhysicalHeight = 22.673f;
+
+	// Deprecated. See @HandsContextData.HandCollisionPrimitive
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float HandPhysicalRadius = 6.519027f;
 
@@ -431,6 +455,8 @@ protected:
 	// APawn interface
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
 	// End of APawn interface
+
+	void SetupHandRuntimeContextData(FHandsContextData& HandData) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool IsFreeLooking;

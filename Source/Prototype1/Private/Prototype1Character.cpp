@@ -14,6 +14,7 @@
 #include <Kismet/KismetMathLibrary.h>
 
 #include "ClimberCameraManager.h"
+#include "PhysicsEngine/PhysicsAsset.h"
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
@@ -92,6 +93,8 @@ void APrototype1Character::BeginPlay()
 	// Maybe have an initializer for a few gameplay states.
 	bIsAlive = true;
 
+	Mesh1PPhysicsAsset = Mesh1P->GetPhysicsAsset();
+
 	RightHandData.HandIndex = 0;
 	LeftHandData.HandIndex = 1;
 
@@ -101,18 +104,24 @@ void APrototype1Character::BeginPlay()
 	RightHandData.LocalHandIdleLocation = RightHandIdlePositionLocal;
 	RightHandData.LocalHandIdleRotation = RightHandIdleRotationLocal;
 
+	SetupHandRuntimeContextData(RightHandData);
+	SetupHandRuntimeContextData(LeftHandData);
+
 	SetElbowSetup(0, ESETUP_Idle);
 	SetElbowSetup(1, ESETUP_Idle);
 
 	// Since we start on the ground, default movement mode will be Walking.
 	ClimberMovementComponent->SetMovementMode(EMovementMode::MOVE_Walking);
-
+	
 	/** Caching some "heavy" calculations that will be used everyframe */
 	ArmsLengthUnitsSquared = FMath::Square(ArmsLengthUnits);
 
+	// Deprecated, but we will still calculate this.
+	HandPhysicalHeight = HandPhysicalLength + (HandPhysicalRadius * 2);
+
 	// Get Shoulder-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
-	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(FName("clavicle_r"));
-	const FVector ShoulderBoneLocation = Mesh1P->GetBoneLocation(FName("upperarm_r"));
+	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(RightHandData.ClavicleBoneName);
+	const FVector ShoulderBoneLocation = Mesh1P->GetBoneLocation(RightHandData.UpperArmBoneName);
 	ClavicleShoulderLength = (ShoulderBoneLocation - ClavicleBoneLocation).Length() * ClavicleShoulderLengthMultiplier;
 }
 
@@ -150,6 +159,25 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 	}
 }
 
+void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandData) const
+{
+	if (!IsValid(Mesh1PPhysicsAsset))
+	{
+		UE_LOG(LogTemp, Error, TEXT("[APrototype1Character::SetupHandsRuntimeContextData] No Mesh1PPhysicsAsset present"));
+		return;
+	}
+
+	int32 HandBodyIndex = Mesh1PPhysicsAsset->FindBodyIndex(HandData.HandBoneName);
+	check(Mesh1PPhysicsAsset->SkeletalBodySetups.IsValidIndex(HandBodyIndex));
+	FKAggregateGeom* AggGeom = &Mesh1PPhysicsAsset->SkeletalBodySetups[HandBodyIndex]->AggGeom;
+	FKShapeElem* Elem = AggGeom->GetElement(EAggCollisionShape::Sphyl, 0);
+	if (FKSphylElem* SphylElem = static_cast<FKSphylElem*>(Elem))
+	{
+		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(SphylElem->Rotation.Quaternion());
+		HandData.HandCollisionPrimitive = SphylElem;
+	}
+}
+
 void APrototype1Character::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
@@ -162,6 +190,26 @@ void APrototype1Character::Tick(float DeltaSeconds)
 
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
+
+	const FVector HandLocation = GetSafeHandLocation(LeftHandData);
+	const FQuat HandRotation = GetHandRotation(LeftHandData).Quaternion();
+	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, HandRotation, FColor::Blue, false, 0.1f, 0, 1.0f);
+	
+	if (LeftHandData.HandCollisionPrimitive)
+	{
+		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(LeftHandData.HandBoneName).TransformRotation(LeftHandData.HandCollisionPrimitive->Rotation.Quaternion());
+		DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, ActualHandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+		
+		// const int32 HandBodyIndex = Mesh1PPhysicsAsset->FindBodyIndex(TEXT("hand_l"));
+		// check(Mesh1PPhysicsAsset->SkeletalBodySetups.IsValidIndex(HandBodyIndex));
+		// FKAggregateGeom* AggGeom = &Mesh1PPhysicsAsset->SkeletalBodySetups[HandBodyIndex]->AggGeom;
+		// FKShapeElem* Elem = AggGeom->GetElement(EAggCollisionShape::Sphyl, 0);
+		// if (FKSphylElem* SphylElem = static_cast<FKSphylElem*>(Elem))
+		// {
+		// 	const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(TEXT("hand_l")).TransformRotation(SphylElem->Rotation.Quaternion());
+		// 	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, ActualHandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+		// }
+	}
 
 	// Need to convert all these timers into a class, or struct.
 	if (IsLookingBack())
@@ -440,9 +488,8 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	// TODO: Remove TraceVerticalExtension entirely, this can cause the unintended "leap" bug.
 	const float TraceVerticalExtension = FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
 	GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
-
-	const FName ClavicleBone = (HandData.HandIndex == 0) ? FName("clavicle_r") : FName("clavicle_l");
-	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(ClavicleBone);
+	
+	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(HandData.ClavicleBoneName);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
 	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
@@ -649,7 +696,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	const FVector HandNormal = HandData.GetHandNormal();
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
-	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) + BodyOffset;
+	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) + BodyOffset;
 
 	// Variable used for debugging only. (Add a pragma flag to dynamically remove this)
 	const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;

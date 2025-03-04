@@ -29,7 +29,7 @@ namespace MovementClimbingUtils
 			{
 				const FTransform GrabObjectLocalToWorld = GrabObject->GetComponentTransform();
 
-				FVector ForceDirection = ClimberCharacter->Mesh1P->GetBoneLocation(HandData.ShoulderBoneName) - GrabObject->GetComponentLocation();
+				FVector ForceDirection = ClimberCharacter->Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) - GrabObject->GetComponentLocation();
 				float RopeLength = ForceDirection.Size();
 				ForceDirection.Normalize();
 
