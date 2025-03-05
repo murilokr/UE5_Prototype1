@@ -71,6 +71,9 @@ struct FHandsContextData
 	FName UpperArmBoneName = "upperarm_r";
 
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	FName LowerArmBoneName = "lowerarm_r";
+
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
 	FName HandBoneName = "hand_r";
 
 	// Maybe we'll remove this.
@@ -106,6 +109,7 @@ struct FHandsContextData
 
 	// Actual hand hitbox.
 	FKSphylElem* HandCollisionPrimitive = nullptr;
+	FCollisionShape HandCollisionShape;
 
 	// Hand Location
 	FVector GetHandLocation() const;
@@ -256,6 +260,10 @@ public:
 	UFUNCTION(BlueprintPure)
 	bool IsHandGrabbing(int HandIndex) const;
 	bool IsHandGrabbing(const FHandsContextData& HandData) const;
+
+	UFUNCTION(BlueprintPure)
+	bool CanHandInteract(int HandIndex) const;
+	bool CanHandInteract(const FHandsContextData& HandData) const;
 
 	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
 

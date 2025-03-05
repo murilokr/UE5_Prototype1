@@ -116,8 +116,8 @@ void APrototype1Character::BeginPlay()
 	/** Caching some "heavy" calculations that will be used everyframe */
 	ArmsLengthUnitsSquared = FMath::Square(ArmsLengthUnits);
 
-	// Deprecated, but we will still calculate this.
-	HandPhysicalHeight = HandPhysicalLength + (HandPhysicalRadius * 2);
+	// Deprecated, but we will still calculate this. (This will actually be the half-length
+	HandPhysicalHeight = (HandPhysicalLength + (HandPhysicalRadius * 2)) / 2;
 
 	// Get Shoulder-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(RightHandData.ClavicleBoneName);
@@ -175,6 +175,7 @@ void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandDa
 	{
 		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(SphylElem->Rotation.Quaternion());
 		HandData.HandCollisionPrimitive = SphylElem;
+		HandData.HandCollisionShape = FCollisionShape::MakeCapsule(SphylElem->Radius, (SphylElem->Length + SphylElem->Radius * 2) / 2.f);
 	}
 }
 
@@ -190,26 +191,6 @@ void APrototype1Character::Tick(float DeltaSeconds)
 
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
-
-	const FVector HandLocation = GetSafeHandLocation(LeftHandData);
-	const FQuat HandRotation = GetHandRotation(LeftHandData).Quaternion();
-	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, HandRotation, FColor::Blue, false, 0.1f, 0, 1.0f);
-	
-	if (LeftHandData.HandCollisionPrimitive)
-	{
-		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(LeftHandData.HandBoneName).TransformRotation(LeftHandData.HandCollisionPrimitive->Rotation.Quaternion());
-		DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, ActualHandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
-		
-		// const int32 HandBodyIndex = Mesh1PPhysicsAsset->FindBodyIndex(TEXT("hand_l"));
-		// check(Mesh1PPhysicsAsset->SkeletalBodySetups.IsValidIndex(HandBodyIndex));
-		// FKAggregateGeom* AggGeom = &Mesh1PPhysicsAsset->SkeletalBodySetups[HandBodyIndex]->AggGeom;
-		// FKShapeElem* Elem = AggGeom->GetElement(EAggCollisionShape::Sphyl, 0);
-		// if (FKSphylElem* SphylElem = static_cast<FKSphylElem*>(Elem))
-		// {
-		// 	const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(TEXT("hand_l")).TransformRotation(SphylElem->Rotation.Quaternion());
-		// 	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight/2, HandPhysicalRadius, ActualHandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
-		// }
-	}
 
 	// Need to convert all these timers into a class, or struct.
 	if (IsLookingBack())
@@ -505,6 +486,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.025f, 0, 1.0f);
 
 	HandData.CurrentFrameTracedHitResult = HitResult;
+	HandData.CanInteract = HitResult.bBlockingHit;
 
 	if (HitResult.bBlockingHit)
 	{
@@ -806,9 +788,8 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	//QueryParams.AddIgnoredActor(this);
 
 	////// We need to add a trace here, to make sure that when we slip to the vector direction, we don't end up where there isn't anything to hold on to.
-	//FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
 	//TArray<FHitResult> HitResults;
-	//GetWorld()->SweepMultiByChannel(HitResults, HandLocation + HandSlipVector, HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	//GetWorld()->SweepMultiByChannel(HitResults, HandLocation + HandSlipVector, HandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams);
 
 	//FHitResult BestHitResult;
 	//bool bHadValidBlockingHit = false;
@@ -861,7 +842,30 @@ FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandD
 	if (!HandData.IsGrabbing)
 	{
 		const FTransform MeshToWorld = Mesh1P->GetComponentToWorld();
-		return MeshToWorld.TransformPosition(HandData.LocalHandIdleLocation);
+		FVector FinalHandLocation = MeshToWorld.TransformPosition(HandData.LocalHandIdleLocation);
+		const FVector UpperArmLocation = Mesh1P->GetBoneLocation(HandData.UpperArmBoneName);
+		const FVector LowerArmLocation = Mesh1P->GetBoneLocation(HandData.LowerArmBoneName);
+		constexpr float ExtraLengthMult = 1.2f;
+		const float MaxBoneLength = ((FinalHandLocation-LowerArmLocation).Length() + (LowerArmLocation-UpperArmLocation).Length()) * ExtraLengthMult; // This is just to trace a path.
+		
+		const FQuat HandRotation = Mesh1P->GetBoneTransform(LeftHandData.HandBoneName).TransformRotation(LeftHandData.HandCollisionPrimitive->Rotation.Quaternion());
+		
+		FCollisionQueryParams QueryParams;
+		QueryParams.AddIgnoredActor(this);
+
+		FHitResult HitResult;
+		if (GetWorld()->SweepSingleByChannel(HitResult, UpperArmLocation, FinalHandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
+		{
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.1f, 0, 1.0f);
+			FinalHandLocation = HitResult.Location;
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+		}
+		else
+		{
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+		}
+		
+		return FinalHandLocation;
 	}
 
 	return HandData.GetHandLocation() + HandData.GetHandNormal() * HandSafeZone;
@@ -941,6 +945,16 @@ bool APrototype1Character::IsHandGrabbing(const FHandsContextData& HandData) con
 	return HandData.IsGrabbing;
 }
 
+bool APrototype1Character::CanHandInteract(int HandIndex) const
+{
+	return CanHandInteract((HandIndex == 0) ? RightHandData : LeftHandData);
+}
+
+bool APrototype1Character::CanHandInteract(const FHandsContextData& HandData) const
+{
+	return HandData.CanInteract;
+}
+
 FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
 {
 	const FVector HandLocation = HandData.GetHandLocation();
@@ -949,12 +963,11 @@ FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& Ha
 	DrawDebugDirectionalArrow(GetWorld(), HandLocation, SlipTarget, 1.0f, FColor::Red, false, 10.25f, 0, 0.5f);
 	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 10.25f, 0, 1.0f);
 
-	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 
 	TArray<FHitResult> HitResults;
-	GetWorld()->SweepMultiByChannel(HitResults, HandLocation, SlipTarget, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	GetWorld()->SweepMultiByChannel(HitResults, HandLocation, SlipTarget, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams);
 
 	for (const FHitResult& HR : HitResults)
 	{
@@ -1004,10 +1017,8 @@ FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
 
-	FCollisionShape CapsuleShape = FCollisionShape::MakeCapsule(HandPhysicalRadius, HandPhysicalHeight);
-
 	FHitResult MoveDeltaHitResult;
-	GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, HandMoveDelta, HandMoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, CapsuleShape, QueryParams);
+	GetWorld()->SweepSingleByChannel(MoveDeltaHitResult, HandMoveDelta, HandMoveDelta * 1.01f, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams);
 	if (!MoveDeltaHitResult.bBlockingHit)
 	{
 		UE_LOG(LogTemp, Error, TEXT("[APrototype1Character::MoveHandGrabLocation] Something went incredibly wrong here."));
