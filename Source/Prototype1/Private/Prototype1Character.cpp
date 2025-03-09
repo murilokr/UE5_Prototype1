@@ -843,6 +843,13 @@ FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandD
 	{
 		const FTransform MeshToWorld = Mesh1P->GetComponentToWorld();
 		FVector FinalHandLocation = MeshToWorld.TransformPosition(HandData.LocalHandIdleLocation);
+
+		if (!HandData.CanInteract)
+		{
+			// Early out, since we aren't grabbing, and hand can't interact. Might remove this in the future, in case I want to add a "hold" hand up functionality. (To grab something)
+			return FinalHandLocation;
+		}
+
 		const FVector UpperArmLocation = Mesh1P->GetBoneLocation(HandData.UpperArmBoneName);
 		const FVector LowerArmLocation = Mesh1P->GetBoneLocation(HandData.LowerArmBoneName);
 		constexpr float ExtraLengthMult = 1.2f;
