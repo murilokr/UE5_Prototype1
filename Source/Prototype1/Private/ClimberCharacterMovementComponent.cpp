@@ -20,8 +20,8 @@ namespace MovementClimbingUtils
 		return false;
 	}
 
-	// TODO: Add Substepping.
-	void UpdateGrabbableObjectVelocity(const FHandsContextData& HandData, float DeltaSeconds, FVector& PrevHandObjectLocation, FVector& ArmFixVector, UClimberCharacterMovementComponent* ClimberCMC)
+	// DeltaTime is already substepped.
+	void UpdateGrabbableObjectVelocity(const FHandsContextData& HandData, float DeltaTime, const FVector& PlayerAcceleration, FVector& PrevHandObjectLocation, FVector& PrevHandObjectVelocity, FVector& ArmFixVector, UClimberCharacterMovementComponent* ClimberCMC)
 	{
 		if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
 		{
@@ -29,112 +29,124 @@ namespace MovementClimbingUtils
 			{
 				const FTransform GrabObjectLocalToWorld = GrabObject->GetComponentTransform();
 
-				FVector ForceDirection = ClimberCharacter->Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) - GrabObject->GetComponentLocation();
-				float RopeLength = ForceDirection.Size();
-				ForceDirection.Normalize();
+				//FVector ForceDirection = ClimberCharacter->Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) - GrabObject->GetComponentLocation();
+				//float RopeLength = ForceDirection.Size();
+				//ForceDirection.Normalize();
 
-				// Calculate stretch ratio (how much the rope is stretched beyond its relaxed length)
-				float RopeRelaxedLength = ClimberCharacter->ArmsLengthUnits; // Initial length of the rope when not stretched
-				float StretchRatio = (RopeLength - RopeRelaxedLength) / RopeRelaxedLength;
-
-
-
-				// Get velocity of Object A (source object)
-				FVector ObjectAVelocity = ClimberCMC->Velocity;
-				float ObjectAMass = ClimberCMC->Mass;
-
-				// Calculate force magnitude based on velocity and stretch
-				float ForceMagnitude = ObjectAVelocity.Size() * ObjectAMass * StretchRatio;
+				//// Calculate stretch ratio (how much the rope is stretched beyond its relaxed length)
+				//float RopeRelaxedLength = ClimberCharacter->ArmsLengthUnits; // Initial length of the rope when not stretched
+				//float StretchRatio = (RopeLength - RopeRelaxedLength) / RopeRelaxedLength;
 
 
 
-				// Apply force to Object B (attached object)
-				FVector ForceToApply = ForceMagnitude * ForceDirection * GrabObject->GetMass() * DeltaSeconds;		
-				const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToApply);
-				GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, NAME_None);
+				//// Get velocity of Object A (source object)
+				//FVector ObjectAVelocity = ClimberCMC->Velocity;
+				//float ObjectAMass = ClimberCMC->Mass;
+
+				//// Calculate force magnitude based on velocity and stretch
+				//float ForceMagnitude = ObjectAVelocity.Size() * ObjectAMass * StretchRatio;
 
 
-				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation) + ForceToApply, 2.f, FColor::Green, false, 0.025f, 0, 1.f);
+
+				//// Apply force to Object B (attached object)
+				//FVector ForceToApply = ForceMagnitude * ForceDirection * GrabObject->GetMass() * DeltaTime;		
+				//const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToApply);
+				//GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, NAME_None);
+
+
+				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation) + ForceToApply, 2.f, FColor::Green, false, 0.025f, 0, 1.f);
 				
-				//
-				//const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
-				//const FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation;
-				//PrevHandObjectLocation = GrabObjectLocation;
+				GEngine->AddOnScreenDebugMessage(102, DeltaTime, FColor::Yellow, TEXT("UPDATE GRABBABLE OBJECT VELOCITY"));
+				const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
+				FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation; //TODO: THIS ISNT ACTUALLY SPEED! WE NEED TO DIVIDE BY DeltaTime!!!!!!!!!!
+				GrabObjectVelocity = PrevHandObjectVelocity;
+				PrevHandObjectLocation = GrabObjectLocation;
 
-				//// Calculate Force to add to grabbed object.
-				//// We start with player gravity
-				//FVector ForceToAddToObject;// = -ClimberCMC->Velocity; //* ClimberCMC->Mass;
+				// Calculate Force to add to grabbed object.
+				// We start with player gravity
+				FVector ForceToAddToObject;// = -ClimberCMC->Velocity; //* ClimberCMC->Mass;
+				ForceToAddToObject += PlayerAcceleration;// * ClimberCMC->Mass;
 
-				//// -ArmFixVector is the distance we want to move it, DeltaSeconds is the amount of time needed, and we have the initial velocity
-				//// So we can calculate the actual force needed to move it towards ArmFixVector
-				//// F = m . A
-				//// S = u.dt + 1/2 . A . dt2
-				//// We now need to calculate the acceleration since we know everything else.
-				//// S = -ArmFixVector  // This is a distance, we should convert it to a force.
-				//// u = GrabObjectVelocity
-				//// dt = DeltaSeconds
-				//// So to calculate acceleration, we have:
-				//// A = (2.(S-u.dt)) / dt2
-				//const FVector Acceleration = (2 * (-ArmFixVector - GrabObjectVelocity * DeltaSeconds)) / (DeltaSeconds * DeltaSeconds);
+				// -ArmFixVector is the distance we want to move it, DeltaTime is the amount of time needed, and we have the initial velocity
+				// So we can calculate the actual force needed to move it towards ArmFixVector
+				// F = m . A
+				// S = u.dt + 1/2 . A . dt2
+				// We now need to calculate the acceleration since we know everything else.
+				// S = -ArmFixVector  // This is a distance, we should convert it to a force.
+				// u = GrabObjectVelocity
+				// dt = DeltaTime
+				// So to calculate acceleration, we have:
+				// A = (2.(S-u.dt)) / dt2
+				const FVector Acceleration = (2 * (-ArmFixVector - GrabObjectVelocity * DeltaTime)) / (DeltaTime * DeltaTime);
 
-				//// Then the final Force will be
-				//// F = m . (2.(S-u.dt)) / dt2
-				//ForceToAddToObject += Acceleration;// *(GrabObject->GetMass() + ClimberCMC->Mass);
-				//ForceToAddToObject = ForceToAddToObject * (1.f - FMath::Min(ClimberCMC->ForceDampingAppliedToPhysicsObjectMultiplier * DeltaSeconds, 1.f));
+				// Then the final Force will be
+				// F = m . (2.(S-u.dt)) / dt2
+				ForceToAddToObject += Acceleration;// *(GrabObject->GetMass() + ClimberCMC->Mass);
+				ForceToAddToObject *= GrabObject->GetMass();
+				ForceToAddToObject = ForceToAddToObject * (1.f - FMath::Min(ClimberCMC->ForceDampingAppliedToPhysicsObjectMultiplier * DeltaTime, 1.f));
 
-				//if (!ClimberCMC->UseImpulseOnPhysicsObjects)
-				//{
-				//	//ForceToAddToObject = ForceToAddToObject / DeltaSeconds; // Impulse to Force (if Impulse was multiplied by DeltaSeconds internally)
-				//	const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
-				//	GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitBoneName);
-				//}
-				//else
-				//{
-				//	const FVector ImpulseToAddToObject = ForceToAddToObject * DeltaSeconds; // Force to Impulse
-				//	GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation), HandData.HitBoneName);
-				//}
+				if (!ClimberCMC->UseImpulseOnPhysicsObjects)
+				{
+					//ForceToAddToObject = ForceToAddToObject / DeltaTime; // Impulse to Force (if Impulse was multiplied by DeltaTime internally)
+					const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
+					GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitBoneName);
+				}
+				else
+				{
+					const FVector ImpulseToAddToObject = ForceToAddToObject * DeltaTime; // Force to Impulse
+					GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation), HandData.HitBoneName);
+				}
 
-				//// Debugs
-				//const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
-				//DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
-				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
-				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
+				// Debugs
+				const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
+				DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
+				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
+				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
 
-				//const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
-				//if (GrabObjectVelocitySize > 100.f)
-				//{
-				//	GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
-				//		FString::Printf(TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-				//			*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
-				//	UE_LOG(LogTemp, Display, TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-				//		*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
+				const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
+				if (GrabObjectVelocitySize > 100.f)
+				{
+					GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
+						FString::Printf(TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+							*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+					UE_LOG(LogTemp, Display, TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
 
-				//	/*if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
-				//	{
-				//		ClimberCharacter->ReleaseHand(HandData);
-				//	}*/
-				//}
-				//else
-				//{
-				//	GEngine->AddOnScreenDebugMessage(20, 1.0f, FColor::Green,
-				//		FString::Printf(TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-				//			*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
-				//	UE_LOG(LogTemp, Display, TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-				//		*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
-				//}
+					/*if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
+					{
+						ClimberCharacter->ReleaseHand(HandData);
+					}*/
+				}
+				else
+				{
+					GEngine->AddOnScreenDebugMessage(20, 1.0f, FColor::Green,
+						FString::Printf(TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+							*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+					UE_LOG(LogTemp, Display, TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
+				}
+
+				PrevHandObjectVelocity = (GrabObject->GetComponentLocation() - PrevHandObjectLocation) / DeltaTime;
 			}
 		}
 	}
 
-	void UpdateVelocityWithGrabbableObjectVelocity(const FHandsContextData& HandData, FVector& OutAccelerationVector)
+	FVector GetGrabbableObjectVelocity(const FHandsContextData& HandData)
 	{
 		if (UPrimitiveComponent* GrabObject = HandData.HitComponent)
 		{
 			if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
 			{
-				OutAccelerationVector += GrabObject->ComponentVelocity;
+				return GrabObject->ComponentVelocity;
 			}
 		}
+
+		return FVector::ZeroVector;
+	}
+
+	void UpdateVelocityWithGrabbableObjectVelocity(const FHandsContextData& HandData, FVector& OutAccelerationVector)
+	{
+		OutAccelerationVector += GetGrabbableObjectVelocity(HandData);
 	}
 }
 
@@ -143,19 +155,63 @@ void UClimberCharacterMovementComponent::InitializeComponent()
 	ClimberCharacterOwner = Cast<APrototype1Character>(GetOwner());
 }
 
+void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
+{
+	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	if (!IsClimbing())
+	{
+		return;
+	}
+	
+	if (HelperSpringIntensityFalloffTimer > 0.0f)
+	{
+		HelperSpringIntensityFalloffTimer = FMath::Max(0.0f, HelperSpringIntensityFalloffTimer - DeltaTime);
+
+		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
+		HelperSpringIntensity = HelperSpringIntensityFalloffCurve->GetFloatValue(FalloffTime) * HelperSpringMaxIntensity;
+
+		const float dThickness = FMath::Lerp(0.75f, 0.2f, FalloffTime);
+		const FLinearColor dColor = FLinearColor::LerpUsingHSV(FLinearColor::Blue, FColor::Red, FalloffTime);
+		const FVector SpringDirection = HelperSpringAnchor - UpdatedComponent->GetComponentLocation();
+		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
+		//GEngine->AddOnScreenDebugMessage(44, DeltaTime, FColor::Yellow, FString::Printf(TEXT("HelperSpring - Intensity: %f - Timer: %f - dThickness: %f"), HelperSpringIntensity, HelperSpringIntensityFalloffTimer, dThickness));
+	}
+	else // for debug
+	{
+		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
+		
+		const float dThickness = FMath::Lerp(0.75f, 0.2f, FalloffTime);
+		const FLinearColor dColor = FLinearColor::LerpUsingHSV(FColor::Blue, FColor::Red, FalloffTime);
+		const FVector SpringDirection = HelperSpringAnchor - UpdatedComponent->GetComponentLocation();
+		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
+		//GEngine->AddOnScreenDebugMessage(44, 5.0f, FColor::Red, FString::Printf(TEXT("HelperSpringIntensity: %f"), HelperSpringIntensity));
+	}
+}
+
+void UClimberCharacterMovementComponent::OnStartClimbing()
+{
+	//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(45.0f);
+}
+
+void UClimberCharacterMovementComponent::OnEndClimbing()
+{
+	//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.0f);
+}
+
 void UClimberCharacterMovementComponent::OnMovementModeChanged(EMovementMode PreviousMovementMode, uint8 PreviousCustomMode)
 {
 	if (ClimberCharacterOwner)
 	{
 		if (IsClimbing())
 		{
-			//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(45.0f);
+			OnStartClimbing();
 		}
 
 		const bool bWasClimbing = PreviousMovementMode == MOVE_Custom && PreviousCustomMode == CMOVE_Climbing;
 		if (bWasClimbing)
 		{
-			//ClimberCharacterOwner->GetCapsuleComponent()->SetCapsuleHalfHeight(96.0f);
+			OnEndClimbing();
 		}
 
 		const bool bWasJumping = ClimberCharacterOwner->bWasJumping || ClimberCharacterOwner->bPressedJump;
@@ -264,6 +320,12 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 	}
 }
 
+float UClimberCharacterMovementComponent::GetCoyoteGravityForce() const
+{
+	const float CoyoteStep = (1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration,HelperSpringIntensityFalloffTimer));
+	return FMath::Lerp(MinCoyoteGravityForce, GravityForce, CoyoteStep);
+}
+
 void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 Iterations)
 {
 	if (DeltaSeconds < MIN_TICK_TIME)
@@ -291,8 +353,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		remainingTime -= timeTick;
 
 		// We may need to impart the velocity of the object that we are holding onto here.
-		FVector ClimbingAcceleration = FVector::ZeroVector;
-		ClimbingAcceleration += GravityForce * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
+		FVector ClimbingAcceleration = GetCoyoteGravityForce() * FVector::DownVector; // Should we only apply gravity if we are holding on a stable surface?
+		// GEngine->AddOnScreenDebugMessage(44, 5.0f, FColor::Yellow, FString::Printf(TEXT("GravityCoyoteForce: %f"), GetCoyoteGravityForce()));
 
 		FVector HorizontalHandsControlAcceleration = Acceleration.GetSafeNormal();
 		if (bForceCharacterPullingWhenNotMoving)
@@ -317,7 +379,11 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 				HandMoveDir = FVector::ZeroVector;
 			
-				FVector BodyOffset = (Velocity + HandSlipVelocity) * timeTick;
+				FVector BodyOffset = Velocity + HandSlipVelocity;
+				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData);
+				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->RightHandData);
+				BodyOffset = BodyOffset * timeTick;
+
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
 				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
 				{
@@ -336,12 +402,18 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 					HorizontalHandsControlAcceleration = HorizontalHandsControlAcceleration.GetSafeNormal() * HandsControlAcceleration;
 				}
 			}
-			
+
+			FVector HelperSpringAcceleration = FVector::ZeroVector;
+			{
+				// Applying ArmSpring force to the acceleration. This is used to bring the arm back from a slightly stretched state to a relaxed state.
+				const FVector HelperSpringForceDirection = (HelperSpringAnchor - UpdatedComponent->GetComponentLocation()).GetSafeNormal();
+				HelperSpringAcceleration += (HelperSpringForceDirection * HelperSpringIntensity) / Mass;
+			}
 
 			// Compute Velocity by applying ClimbingAcceleration and HorizontalHandsControlAcceleration.
 			{
 				AnalogInputModifier = FMath::Clamp<FVector::FReal>(ClimbingAcceleration.Size() / GetMaxAcceleration(), 0.f, 1.f);
-				FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration;
+				FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration + HelperSpringAcceleration;
 
 				const float MaxDecel = GetMaxBrakingDeceleration();
 
@@ -430,7 +502,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 	}
 }
 
-void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int HandIndex, float DeltaSeconds, FVector& ClimbingAcceleration, FVector& HorizontalHandsControlAcceleration, const FVector& BodyOffset)
+void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int HandIndex, float DeltaTime, FVector& ClimbingAcceleration, FVector& HorizontalHandsControlAcceleration, const FVector& BodyOffset)
 {
 	FHandsContextData& HandData = ClimberCharacterOwner->GetMutableHandData(HandIndex);
 	if (!HandData.IsGrabbing)
@@ -439,21 +511,13 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	}
 
 	// Calculate HandControlAcceleration
-	HorizontalHandsControlAcceleration += GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, HandData);
+	const FVector HorizontalHandControlAcceleration = GetHorizontalHandAcceleration(HorizontalHandsControlAcceleration, HandData);
+	HorizontalHandsControlAcceleration += HorizontalHandControlAcceleration;
 
 	FVector RootDeltaFixHand = FVector::ZeroVector;
 	FVector ArmSpringForce = FVector::ZeroVector;
-	FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 	bool IsArmOutstretched;
-	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaSeconds, BodyOffset, IsArmOutstretched, RootDeltaFixHand, ArmSpringForce);
-	if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
-	{
-		MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaSeconds, PrevHandObjectLocation, RootDeltaFixHand, this);
-	}
-	else
-	{
-		//MovementClimbingUtils::UpdateVelocityWithGrabbableObjectVelocity(HandData, Acc);	
-	}
+	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaTime, BodyOffset, IsArmOutstretched, RootDeltaFixHand, ArmSpringForce);
 
 	FVector HandAcceleration = FVector::ZeroVector;
 	
@@ -462,12 +526,12 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		const FVector AccelWithoutArmSpring = ClimbingAcceleration;
 		
 		// Applying ArmSpring force to the acceleration. This is used to bring the arm back from a slightly stretched state to a relaxed state.
-		const FVector ArmSpringAcceleration = (ArmSpringForce * ArmSpringForceIntensity * 100.f) / Mass; // * 100.f is to counter-act gravity force. need to make this explicit.
+		const FVector ArmSpringAcceleration = (ArmSpringForce * ArmSpringForceIntensity * GetCoyoteGravityForce()) / Mass;
 		//ClimbingAcceleration += ((ArmSpringForce * ArmSpringForceIntensity) + -Velocity * ArmSpringDampening) / Mass;
 		HandAcceleration += ArmSpringAcceleration;
 
 		GEngine->AddOnScreenDebugMessage(2 + HandIndex, 1.0f, FColor::Cyan, FString::Printf(TEXT("Applying (%i) arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
+			HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
 	}
 	
 	// Snapping Root back to a acceptable shoulder distance from the hand.
@@ -481,7 +545,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		HandAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
 
 		GEngine->AddOnScreenDebugMessage(HandIndex, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying (%i) arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), ClimbingAcceleration.Length(), *ClimbingAcceleration.ToString()));
+			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
 	}
 
 	// GEngine->AddOnScreenDebugMessage(37, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) Before: %f"), HandAcceleration.Length()));
@@ -490,6 +554,16 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	// GEngine->AddOnScreenDebugMessage(38, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) After: %f"), HandAcceleration.Length()));
 
 	ClimbingAcceleration += HandAcceleration;
+
+	// Now we update any object that we are holding.
+	if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
+	{
+		FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+		FVector& PrevHandObjectVelocity = (HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
+		// HorizontalHandControlAcceleration should be inverted in this case
+		const FVector PlayerAcceleration = GravityForce * FVector::DownVector + HandAcceleration - HorizontalHandControlAcceleration;
+		MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaTime, PlayerAcceleration, PrevHandObjectLocation, PrevHandObjectVelocity, RootDeltaFixHand, this);
+	}
 }
 
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
@@ -528,11 +602,15 @@ float UClimberCharacterMovementComponent::GetMaxBrakingDeceleration() const
 
 void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData& HandData)
 {
+	UpdateHelperSpring(HelperSpringIntensityIdleFalloffDuration);
+	
 	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+	FVector& PrevHandObjectVelocity = (HandData.HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
 
 	if (UPrimitiveComponent* GrabObject = HandData.HitComponent)
 	{
 		PrevHandObjectLocation = GrabObject->GetComponentLocation();
+		PrevHandObjectVelocity = FVector::ZeroVector;
 
 		if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
 		{
@@ -544,8 +622,10 @@ void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData
 void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& HandData)
 {
 	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+	FVector& PrevHandObjectVelocity = (HandData.HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
 
 	PrevHandObjectLocation = FVector::ZeroVector;
+	PrevHandObjectVelocity = FVector::ZeroVector;
 
 	if (UPrimitiveComponent* GrabObject = HandData.HitComponent)
 	{
@@ -554,4 +634,19 @@ void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& Ha
 			GrabObject->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Block);
 		}
 	}
+}
+
+void UClimberCharacterMovementComponent::UpdateHelperSpring(float SpringIntensityFalloffCustomDuration)
+{
+	HelperSpringAnchor = UpdatedComponent->GetComponentLocation();
+	HelperSpringIntensity = HelperSpringMaxIntensity;
+	
+	HelperSpringIntensityFalloffDuration = SpringIntensityFalloffCustomDuration;
+	if (HelperSpringIntensityFalloffDuration == -1)
+	{
+		// Default falloff duration is the move falloff duration.
+		HelperSpringIntensityFalloffDuration = HelperSpringIntensityMoveFalloffDuration;
+	}
+	
+	HelperSpringIntensityFalloffTimer = HelperSpringIntensityFalloffDuration;
 }

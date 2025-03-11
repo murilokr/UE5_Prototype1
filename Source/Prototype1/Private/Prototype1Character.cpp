@@ -372,6 +372,9 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 	{
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
+
+		ClimberMovementComponent->UpdateHelperSpring();
+
 		return;
 	}
 
@@ -483,7 +486,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 
 	FHitResult HitResult;
 	GetWorld()->LineTraceSingleByChannel(HitResult, TraceStart, TraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams);
-	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.025f, 0, 1.0f);
+	DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.02f, 0, 1.0f);
 
 	HandData.CurrentFrameTracedHitResult = HitResult;
 	HandData.CanInteract = HitResult.bBlockingHit;
@@ -709,7 +712,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Silver, FString::Printf(TEXT("SpringReadiness: %f"), SpringReadiness));
 	if (SpringReadiness > 0.0f)
 	{
-		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Blue, TEXT("Applying arm spring to relaxed state"));
+		GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Blue, FString::Printf(TEXT("Applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
 		
 		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
 		const FVector SpringForce = HandLocation + RelaxedArmVector - ShoulderOffset;
@@ -721,7 +724,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	}
 	else
 	{
-		GEngine->AddOnScreenDebugMessage(87, 0.1f, FColor::Green, TEXT("Not applying arm spring to relaxed state"));
+		GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Green, FString::Printf(TEXT("Not applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
 	}
 
 	// If Arm is Overstretched (limb limit), then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
@@ -863,13 +866,13 @@ FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandD
 		FHitResult HitResult;
 		if (GetWorld()->SweepSingleByChannel(HitResult, UpperArmLocation, FinalHandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
 		{
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.1f, 0, 1.0f);
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 1.0f);
 			FinalHandLocation = HitResult.Location;
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
 		}
 		else
 		{
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.1f, 0, 1.0f);
+			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
 		}
 		
 		return FinalHandLocation;
