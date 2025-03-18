@@ -470,9 +470,9 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 
 	// Calculating VerticalExtension that goes from 1 to 2. This is to increase a bit on the trace distance if looking upwards.
 	// TODO: Remove TraceVerticalExtension entirely, this can cause the unintended "leap" bug.
-	const float TraceVerticalExtension = FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
+	const float TraceVerticalExtension = 1.0f; // FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);
 	GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
-	
+
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(HandData.ClavicleBoneName);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
 	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
@@ -509,35 +509,74 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 		// Hand is not ready to grab.
 		const FQuat HandRotation = FQuat::Identity;// GetHandRotation(HandData).Quaternion();
 
-		FVector SweepTraceStart = TraceEnd;
-		DrawDebugCapsule(GetWorld(), SweepTraceStart, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.75f);
+		const FVector SweepTraceStart = TraceEnd;
+		FVector SweepTraceStartFixed = SweepTraceStart;
+		DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.5f);
 
-		FVector SweepTraceEnd = ClavicleBoneLocation + ClimberMovementComponent->UpdatedComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
+		const FVector SweepTraceEnd = ClavicleBoneLocation + ClimberMovementComponent->UpdatedComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
+		FVector SweepTraceEndFixed = SweepTraceEnd;
 		FVector SweepPlaneNormal = -ClimberMovementComponent->UpdatedComponent->GetForwardVector();
-		//DrawDebugSolidPlane(GetWorld(), FPlane(SweepTraceEnd, SweepPlaneNormal), SweepTraceEnd, FVector2D(10000.0f, 10000.0f), FColor::Cyan, false, 0.016f, 0);
-		UKismetSystemLibrary::DrawDebugPlane(GetWorld(), FPlane(SweepTraceEnd, SweepPlaneNormal), SweepTraceEnd, 1000.0f, FLinearColor::White, 0.016f);
 		if (GetWorld()->LineTraceSingleByChannel(HitResult, ClavicleBoneLocation, SweepTraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams))
 		{
-			DrawDebugCapsule(GetWorld(), SweepTraceEnd, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.75f);
-			SweepTraceEnd = HitResult.Location;
-			SweepPlaneNormal = HitResult.Normal;
-
-			//DrawDebugSolidPlane(GetWorld(), FPlane(SweepPlaneNormal), SweepTraceEnd, FVector2D(100.0f, 100.0f), FColor::Green, false, 0.016f);
+			DrawDebugCapsule(GetWorld(), SweepTraceEndFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.5f);
+			SweepTraceEndFixed = HitResult.Location;
+			SweepPlaneNormal = HitResult.Normal;	
 		}
-		DrawDebugCapsule(GetWorld(), SweepTraceEnd, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		DrawDebugCapsule(GetWorld(), SweepTraceEndFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 0.75f);
+		//UKismetSystemLibrary::DrawDebugPlane(GetWorld(), FPlane(SweepTraceEndFixed, SweepPlaneNormal), SweepTraceEndFixed, 100.0f, FLinearColor::White, 0.02f);
 		
-		const FVector SweepDir = SweepTraceStart - SweepTraceEnd;
+		const FVector SweepDir = SweepTraceStartFixed - SweepTraceEndFixed;
 		// Add a max distance here, this is for gamefeel, as in, if we are aiming too far from a surface, it wouldn't feel natural to have the game always detect that surface.
 		const FVector SweepDirProjected = FVector::VectorPlaneProject(SweepDir, SweepPlaneNormal);
-		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceEnd + SweepDir, 1.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
-		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceEnd + SweepDirProjected, 1.0f, FColor::Green, false, 0.02f, 0, 1.0f);
-		SweepTraceStart = SweepDirProjected + SweepTraceEnd;
-		DrawDebugCapsule(GetWorld(), SweepTraceStart, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Blue, false, 0.02f, 0, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceEndFixed + SweepDir, 1.0f, FColor::Yellow, false, 0.02f, 0, 0.5f);
+		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceEndFixed + SweepDirProjected, 1.0f, FColor::Green, false, 0.02f, 0, 0.5f);
+		SweepTraceStartFixed = SweepDirProjected + SweepTraceEndFixed + SweepPlaneNormal * HandData.HandCollisionShape.GetCapsuleRadius() * 2.f; // + Some offset in the normal direction.
 
-		//DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceStart, 1.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
-		if (GetWorld()->SweepSingleByChannel(HitResult, SweepTraceStart, SweepTraceEnd, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
+		for (int BinarySweepCount = 0; BinarySweepCount < 3; BinarySweepCount++)
 		{
-			DrawDebugCapsule(GetWorld(), HitResult.ImpactPoint, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Green, false, 0.02f, 0, 1.0f);
+			if (GetWorld()->SweepSingleByChannel(HitResult, SweepTraceStartFixed, SweepTraceEndFixed, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
+			{
+				const float AngleDiff = FMath::RadiansToDegrees(FMath::Acos(HitResult.ImpactNormal | SweepPlaneNormal));
+				if (AngleDiff <= 35.0f)
+				{
+					DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Blue, false, 0.02f, 0, 1.0f);
+					DrawDebugDirectionalArrow(GetWorld(), SweepTraceStartFixed, SweepTraceStartFixed + SweepPlaneNormal * 10.0f, 1.0f, FColor::Orange, false, 0.02f, 0, 0.75f);
+
+					GEngine->AddOnScreenDebugMessage(37, 10.25f, FColor::Purple, FString::Printf(TEXT("Angle Diff of Hand Sweep Target ImpactNormal and Plane Normal: %f"), AngleDiff));
+
+					// Hand is ready to grab.
+					DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceStartFixed, 1.0f, FColor::Green, false, 0.02f, 0, 1.0f);
+					DrawDebugCapsule(GetWorld(), HitResult.Location, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Green, false, 0.02f, 0, 0.5f);
+					DrawDebugDirectionalArrow(GetWorld(), HitResult.Location, HitResult.Location + HitResult.Normal * 10.0f, 1.0f, FColor::Green, false, 0.02f, 0, 0.75f);
+					DrawDebugCapsule(GetWorld(), HitResult.ImpactPoint, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Purple, false, 0.02f, 0, 1.0f);
+					DrawDebugDirectionalArrow(GetWorld(), HitResult.ImpactPoint, HitResult.ImpactPoint + HitResult.ImpactNormal * 10.0f, 1.0f, FColor::Purple, false, 0.02f, 0, 0.75f);
+
+					HandData.CurrentFrameTracedHitResult = HitResult;
+					HandData.CanInteract = true;
+
+					// Now we check for the input buffer in case we have a pending input on this hand
+					float& HandInputBuffer = (HandData.HandIndex == 0) ? RightHandGrabInputBuffer : LeftHandGrabInputBuffer;
+					if (HandInputBuffer > 0.f)
+					{
+						GEngine->AddOnScreenDebugMessage(40, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
+						Grab(HandData.HandIndex);
+						HandInputBuffer = 0.f;
+					}
+					return;
+				}
+				else
+				{
+					DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.25f);
+					DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceStartFixed, 1.0f, FColor::Red, false, 0.02f, 0, 0.25f);
+				}
+			}
+			else
+			{
+				DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Magenta, false, 0.02f, 0, 0.25f);
+				DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceStartFixed, 1.0f, FColor::Yellow, false, 0.02f, 0, 0.25f);
+			}
+
+			SweepTraceStartFixed = UKismetMathLibrary::VLerp(SweepTraceStartFixed, SweepTraceStart, 0.5f);	// Binary lerp.	
 		}
 	}
 }
@@ -551,6 +590,8 @@ void APrototype1Character::Grab(int HandIndex)
 	}
 
 	const FHitResult HitResult = HandData.CurrentFrameTracedHitResult;
+	const FVector GrabLocation = HitResult.ImpactPoint;//Location;
+	const FVector GrabNormal = HitResult.ImpactNormal;//Normal;
 
 	if (HitResult.Time == -1.0f || !HitResult.bBlockingHit)
 	{
@@ -568,21 +609,21 @@ void APrototype1Character::Grab(int HandIndex)
 
 	// Calculate GrabPositionT
 	//HandData.GrabPositionT = 0.0f;
-	//const FVector PositionDir = HitResult.Location - TraceStart;
+	//const FVector PositionDir = GrabLocation - TraceStart;
 	//if ((TraceDir | PositionDir) >= 0.0f)
 	//{
-	//	// HitResult.Location is inline with TraceDir.
+	//	// GrabLocation is inline with TraceDir.
 	//	HandData.GrabPositionT = FMath::Clamp(PositionDir.SquaredLength() / TraceLength, 0.0f, 1.0f);
 	//}
 
 	FTransform HitBoneWorldToLocalTransform = HitResult.GetActor()->GetActorTransform(); //HitResult.Component->GetSocketTransform(HitResult.BoneName).Inverse();
-	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(HitResult.Location);
-	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.InverseTransformVector(HitResult.Normal);
+	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(GrabLocation);
+	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
 
 
 	// Adding a slip here just for debugging purposes
-	const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, HitResult.Normal).GetSafeNormal();
-	const FVector SlipVector = HitResult.Location + SlipDir * 60.f;
+	const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, GrabNormal).GetSafeNormal();
+	const FVector SlipVector = GrabLocation + SlipDir * 60.f;
 	//AddHandSlipTarget(HandData, SlipVector);
 
 
@@ -598,8 +639,8 @@ void APrototype1Character::Grab(int HandIndex)
 	}
 
 	HandData.HandToWorldTransform = HandData.WorldToHandTransform.Inverse();
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), HitResult.Location, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), HitResult.Location, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
 
 	ClimberMovementComponent->SetHandGrabbing(HandData);
 
@@ -898,13 +939,13 @@ FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandD
 		FHitResult HitResult;
 		if (GetWorld()->SweepSingleByChannel(HitResult, UpperArmLocation, FinalHandLocation, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
 		{
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 1.0f);
+			//DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 1.0f);
 			FinalHandLocation = HitResult.Location;
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+			//DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
 		}
 		else
 		{
-			DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+			//DrawDebugCapsule(GetWorld(), FinalHandLocation, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
 		}
 		
 		return FinalHandLocation;
