@@ -507,6 +507,38 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	else
 	{
 		// Hand is not ready to grab.
+		const FQuat HandRotation = FQuat::Identity;// GetHandRotation(HandData).Quaternion();
+
+		FVector SweepTraceStart = TraceEnd;
+		DrawDebugCapsule(GetWorld(), SweepTraceStart, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.75f);
+
+		FVector SweepTraceEnd = ClavicleBoneLocation + ClimberMovementComponent->UpdatedComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
+		FVector SweepPlaneNormal = -ClimberMovementComponent->UpdatedComponent->GetForwardVector();
+		//DrawDebugSolidPlane(GetWorld(), FPlane(SweepTraceEnd, SweepPlaneNormal), SweepTraceEnd, FVector2D(10000.0f, 10000.0f), FColor::Cyan, false, 0.016f, 0);
+		UKismetSystemLibrary::DrawDebugPlane(GetWorld(), FPlane(SweepTraceEnd, SweepPlaneNormal), SweepTraceEnd, 1000.0f, FLinearColor::White, 0.016f);
+		if (GetWorld()->LineTraceSingleByChannel(HitResult, ClavicleBoneLocation, SweepTraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams))
+		{
+			DrawDebugCapsule(GetWorld(), SweepTraceEnd, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.75f);
+			SweepTraceEnd = HitResult.Location;
+			SweepPlaneNormal = HitResult.Normal;
+
+			//DrawDebugSolidPlane(GetWorld(), FPlane(SweepPlaneNormal), SweepTraceEnd, FVector2D(100.0f, 100.0f), FColor::Green, false, 0.016f);
+		}
+		DrawDebugCapsule(GetWorld(), SweepTraceEnd, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		
+		const FVector SweepDir = SweepTraceStart - SweepTraceEnd;
+		// Add a max distance here, this is for gamefeel, as in, if we are aiming too far from a surface, it wouldn't feel natural to have the game always detect that surface.
+		const FVector SweepDirProjected = FVector::VectorPlaneProject(SweepDir, SweepPlaneNormal);
+		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceEnd + SweepDir, 1.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceEnd + SweepDirProjected, 1.0f, FColor::Green, false, 0.02f, 0, 1.0f);
+		SweepTraceStart = SweepDirProjected + SweepTraceEnd;
+		DrawDebugCapsule(GetWorld(), SweepTraceStart, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Blue, false, 0.02f, 0, 1.0f);
+
+		//DrawDebugDirectionalArrow(GetWorld(), SweepTraceEnd, SweepTraceStart, 1.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		if (GetWorld()->SweepSingleByChannel(HitResult, SweepTraceStart, SweepTraceEnd, HandRotation, ECollisionChannel::ECC_PhysicsBody, HandData.HandCollisionShape, QueryParams))
+		{
+			DrawDebugCapsule(GetWorld(), HitResult.ImpactPoint, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Green, false, 0.02f, 0, 1.0f);
+		}
 	}
 }
 
