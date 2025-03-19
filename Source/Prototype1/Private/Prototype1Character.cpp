@@ -475,7 +475,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 
 	const FVector ClavicleBoneLocation = Mesh1P->GetBoneLocation(HandData.ClavicleBoneName);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
-	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
+	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits);// + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
 	const float TraceLength = TraceDir.SquaredLength();
 
@@ -526,7 +526,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 		const FVector SweepTraceStart = TraceEnd;
 		FVector SweepTraceStartFixed = SweepTraceStart;		
 
-		const FVector SweepTraceEnd = ClavicleBoneLocation + ClimberMovementComponent->UpdatedComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits + ClavicleShoulderLength);
+		const FVector SweepTraceEnd = ClavicleBoneLocation + ClimberMovementComponent->UpdatedComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits);// +ClavicleShoulderLength);
 		FVector SweepTraceEndFixed = SweepTraceEnd;
 		FVector SweepPlaneNormal = -ClimberMovementComponent->UpdatedComponent->GetForwardVector();
 		if (GetWorld()->LineTraceSingleByChannel(HitResult, ClavicleBoneLocation, SweepTraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams))
