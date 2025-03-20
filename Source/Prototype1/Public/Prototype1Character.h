@@ -378,6 +378,12 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float FreeLookPitchAngleLimit = 40.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms - Trace")
+	float ArmConeTraceAngle = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms - Trace")
+	int ArmConeTraceSteps = 4;
+
 	// Elbow Lerping Properties
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	TArray<FElbowSetup> ElbowsSetups;
