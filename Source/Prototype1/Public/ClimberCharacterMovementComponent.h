@@ -16,6 +16,25 @@ enum ECustomMovementMode
 class APrototype1Character;
 struct FHandsContextData;
 
+USTRUCT(BlueprintType)
+struct FHandsRuntimeMovementData
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector HandSlipVelocity = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector HandSlipTarget = FVector::ZeroVector;
+
+	// This goes from 0 to 1 and is scaled by the MaxHandSlipAcceleration value.
+	UPROPERTY(Transient)
+	FVector HandSlipAccelerationInput = FVector::ZeroVector;
+
+	UPROPERTY(Transient)
+	FVector LastHandSlipAccelerationInput = FVector::ZeroVector;
+};
+
 UCLASS()
 class PROTOTYPE1_API UClimberCharacterMovementComponent : public UCharacterMovementComponent
 {
@@ -39,18 +58,32 @@ private:
 	float GetCoyoteGravityForce() const;
 
 	void PhysClimbing(float DeltaSeconds, int32 Iterations);
-	bool IsClimbing() const;
 
 	void ComputeHandAccelerations(const int HandIndex, float DeltaTime, FVector& ClimbingAcceleration, FVector& HorizontalHandsControlAcceleration, const FVector& BodyOffset);
 	FVector GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData);
 
 	virtual float GetMaxBrakingDeceleration() const override;
 
+	FVector ConsumeSlipHandInputVector(const FHandsContextData& HandData);
+
 public:
+	bool IsClimbing() const;
+
 	void SetHandClimbing(const FHandsContextData& HandData);
 	void ReleaseHand(const FHandsContextData& HandData);
 
 	void UpdateHelperSpring(float SpringIntensityFalloffCustomDuration = -1);
+
+	FHandsRuntimeMovementData& GetMutableHandMovementData(int HandIndex);
+
+	// 
+	UFUNCTION(BlueprintCallable)
+	void AddHandSlipAccelerationInput(const FHandsContextData& HandData, const FVector& InputVector);
+
+	// Used for accelerating the hand grab location towards SlipTarget.
+	void AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
+
+	void SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity = false);
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category="Character Movement: Climbing")
 	float MoveIntensityMultiplier = 2.0f;
@@ -73,6 +106,9 @@ public:
 	// Since Gravity is coyote'd. This is the maximum amount of gravity applied to the CMC.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float GravityForce = 500.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
+	float HandSlipMaxAcceleration = 12.5f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float HandsControlAcceleration = 150.f;
@@ -98,12 +134,6 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	FVector HandMoveDir;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	FVector HandSlipVelocity = FVector::ZeroVector;
-
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	FVector HandSlipTarget = FVector::ZeroVector;
-
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Helper Spring")
 	float HelperSpringMaxIntensity = 4500.0f;
 
@@ -117,6 +147,12 @@ public:
 	float HelperSpringIntensityIdleFalloffDuration = 0.75f;
 
 private:
+	UPROPERTY(Transient)
+	FHandsRuntimeMovementData LeftHandRuntimeData;
+
+	UPROPERTY(Transient)
+	FHandsRuntimeMovementData RightHandRuntimeData;
+
 	FVector HelperSpringAnchor;
 	float HelperSpringIntensity = 0.0f;
 	float HelperSpringIntensityFalloffTimer = 0.0f;

@@ -363,7 +363,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			ForcePullOrPushHorizontalMovementTowardsGrabLocation(HorizontalHandsControlAcceleration);
 		}
 
-		FVector HandSlipAcceleration = FVector::ZeroVector;
+		
 
 		// Calculates velocity if not being controlled by root motion.
 		if (!HasAnimRootMotion() && !CurrentRootMotion.HasOverrideVelocity())
@@ -380,22 +380,13 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 				HandMoveDir = FVector::ZeroVector;
 			
-				FVector BodyOffset = Velocity + HandSlipVelocity;
+				FVector BodyOffset = Velocity;
 				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData);
 				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->RightHandData);
 				//BodyOffset += ClimbingAcceleration * timeTick;
 				BodyOffset = BodyOffset * timeTick;
 
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
-				if (ClimberCharacterOwner->LeftHandData.IsInteractClimbing())
-				{
-					// Calculate HandSlipAcceleration
-					// Hardcoded for left hand for now, for debugging purposes. On the future, each hand should have their own slip end point.
-					if (!HandSlipTarget.IsZero())
-					{
-						HandSlipAcceleration = HandSlipTarget - ClimberCharacterOwner->GetHandLocation(1);
-					}
-				}
 				ComputeHandAccelerations(1, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
 
 				// Force Full HandControlAcceleration.
@@ -424,21 +415,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				CalcVelocity(timeTick, WallFriction, true, MaxDecel);
 			}
 
-			HandSlipVelocity = HandSlipVelocity * (1.f - FMath::Min(WallFriction * timeTick, 1.f));
-
-			const bool bZeroHandSlipAcceleration = HandSlipAcceleration.IsZero();
-			if (!bZeroHandSlipAcceleration)
-			{
-				GEngine->AddOnScreenDebugMessage(32, timeTick, FColor::Green, TEXT("Apply Hand Slip Acceleration"));
-
-				HandSlipVelocity += HandSlipAcceleration * timeTick;
-			}
-
-			{
-				TGuardValue<FVector> RestoreVelocity(Velocity, HandSlipVelocity);
-				const float NewMaxInputSlipSpeed = IsExceedingMaxSpeed(MaxSlipSpeed) ? HandSlipVelocity.Size() : MaxSlipSpeed;
-				HandSlipVelocity = HandSlipVelocity.GetClampedToMaxSize(NewMaxInputSlipSpeed);
-			}
+			
 
 			// Add HandSlipVelocity to Velocity
 			const float MaxSpeed = GetMaxSpeed();
@@ -454,19 +431,6 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		ApplyRootMotionToVelocity(timeTick);
 
 		bJustTeleported = false;
-
-		////////////////////////////////////////////////////////////////////////////////////////
-		// Again only hardcoded for left hand for now, add this to each hand later.
-		FVector OldHandLocation = ClimberCharacterOwner->GetMutableHandData(1).GetHandLocation();
-		const FVector HandDelta = HandSlipVelocity * timeTick;
-		//const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(ClimberCharacterOwner->GetMutableHandData(1), HandDelta);
-		//if (HandSlipTarget.Equals(NewHandLocation))
-		//{
-//			HandSlipTarget = FVector::ZeroVector;
-		//}
-
-		//HandSlipVelocity = (NewHandLocation - OldHandLocation) / timeTick;
-		////////////////////////////////////////////////////////////////////////////////////////
 
 		FVector OldLocation = UpdatedComponent->GetComponentLocation();
 		const FVector Delta = Velocity * timeTick;
@@ -507,6 +471,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int HandIndex, float DeltaTime, FVector& ClimbingAcceleration, FVector& HorizontalHandsControlAcceleration, const FVector& BodyOffset)
 {
 	FHandsContextData& HandData = ClimberCharacterOwner->GetMutableHandData(HandIndex);
+	FHandsRuntimeMovementData& HandMovementData = (HandIndex == 0) ? RightHandRuntimeData : LeftHandRuntimeData;
 	if (!HandData.IsInteractClimbing())
 	{
 		return;
@@ -557,6 +522,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 
 	ClimbingAcceleration += HandAcceleration;
 
+	// TODO: MIGHT GET REMOVED! 
 	// Now we update any object that we are holding.
 	if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
 	{
@@ -566,6 +532,52 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		const FVector PlayerAcceleration = GravityForce * FVector::DownVector + HandAcceleration - HorizontalHandControlAcceleration;
 		MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaTime, PlayerAcceleration, PrevHandObjectLocation, PrevHandObjectVelocity, RootDeltaFixHand, this);
 	}
+
+
+	// HandSlip Calculation.
+	// 
+	// Calculate HandSlipAcceleration
+	UE_LOG(LogTemp, Display, TEXT("MaxAcceleration B4: %f | Set to -> %f"), MaxAcceleration, HandSlipMaxAcceleration);
+	TGuardValue<float> RestoreMaxAccelerationAfter(MaxAcceleration, HandSlipMaxAcceleration);
+	FVector HandSlipAcceleration = GetMaxAcceleration() * ConsumeSlipHandInputVector(HandData).GetClampedToMaxSize(1.0f);
+
+	if (!HandMovementData.HandSlipTarget.IsZero())
+	{
+		// Actually override the HandSlipAcceleration to track the HandSlipTarget.
+		const FVector HandSlipTargetDir = HandMovementData.HandSlipTarget - ClimberCharacterOwner->GetHandLocation(HandData);
+		HandSlipAcceleration = GetMaxAcceleration() * HandSlipTargetDir.GetClampedToMaxSize(1.0f);
+	}
+
+	// Apply friction
+	HandMovementData.HandSlipVelocity = HandMovementData.HandSlipVelocity * (1.f - FMath::Min(WallFriction * DeltaTime, 1.f));
+
+	const bool bZeroHandSlipAcceleration = HandSlipAcceleration.IsZero();
+	if (!bZeroHandSlipAcceleration)
+	{
+		GEngine->AddOnScreenDebugMessage(32, DeltaTime, FColor::Green, TEXT("Apply Hand Slip Acceleration"));
+
+		HandMovementData.HandSlipVelocity += HandSlipAcceleration * DeltaTime;
+	}
+
+	{
+		TGuardValue<FVector> RestoreVelocity(Velocity, HandMovementData.HandSlipVelocity);
+		const float NewMaxInputSlipSpeed = IsExceedingMaxSpeed(MaxSlipSpeed) ? HandMovementData.HandSlipVelocity.Size() : MaxSlipSpeed;
+		HandMovementData.HandSlipVelocity = HandMovementData.HandSlipVelocity.GetClampedToMaxSize(NewMaxInputSlipSpeed);
+	}
+
+	// Now actually and physically move the hand!
+	FVector OldHandLocation = HandData.GetHandLocation();
+	const FVector HandDelta = HandMovementData.HandSlipVelocity * DeltaTime;
+	const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(HandData, HandDelta);
+	if (HandMovementData.HandSlipTarget.Equals(NewHandLocation))
+	{
+		HandMovementData.HandSlipTarget = FVector::ZeroVector;
+	}
+
+	HandMovementData.HandSlipVelocity = (NewHandLocation - OldHandLocation) / DeltaTime;
+
+
+	UE_LOG(LogTemp, Display, TEXT("MaxAcceleration After: %f"), MaxAcceleration);
 }
 
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
@@ -639,4 +651,50 @@ void UClimberCharacterMovementComponent::UpdateHelperSpring(float SpringIntensit
 	}
 	
 	HelperSpringIntensityFalloffTimer = HelperSpringIntensityFalloffDuration;
+}
+
+FHandsRuntimeMovementData& UClimberCharacterMovementComponent::GetMutableHandMovementData(int HandIndex)
+{
+	FHandsRuntimeMovementData& HandMovementData = (HandIndex == 0) ? RightHandRuntimeData : LeftHandRuntimeData;
+	return HandMovementData;
+}
+
+FVector UClimberCharacterMovementComponent::ConsumeSlipHandInputVector(const FHandsContextData& HandData)
+{
+	FHandsRuntimeMovementData& HandMovementData = GetMutableHandMovementData(HandData.HandIndex);
+
+	HandMovementData.LastHandSlipAccelerationInput = HandMovementData.HandSlipAccelerationInput;
+	HandMovementData.HandSlipAccelerationInput = FVector::ZeroVector;
+	return HandMovementData.LastHandSlipAccelerationInput;
+}
+
+void UClimberCharacterMovementComponent::AddHandSlipAccelerationInput(const FHandsContextData& HandData, const FVector& InputVector)
+{
+	FHandsRuntimeMovementData& HandMovementData = GetMutableHandMovementData(HandData.HandIndex);
+	HandMovementData.HandSlipAccelerationInput += InputVector;
+}
+
+void UClimberCharacterMovementComponent::AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
+{
+	if (ClimberCharacterOwner)
+	{
+		FHandsRuntimeMovementData& HandMovementData = GetMutableHandMovementData(HandData.HandIndex);
+		const FVector ValidatedSlipTarget = ClimberCharacterOwner->ValidateHandSlipTarget(HandData, SlipTarget);
+		HandMovementData.HandSlipTarget = ValidatedSlipTarget;
+	}
+}
+
+void UClimberCharacterMovementComponent::SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity)
+{
+	FHandsRuntimeMovementData& HandMovementData = GetMutableHandMovementData(HandData.HandIndex);
+
+	if (bOverrideVelocity)
+	{
+		HandMovementData.HandSlipVelocity = SlipVelocity;
+	}
+	else
+	{
+		// Add to the current HandSlipVelocity
+		HandMovementData.HandSlipVelocity += SlipVelocity;
+	}
 }

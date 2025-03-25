@@ -6,8 +6,6 @@
 #include "GameFramework/Character.h"
 #include "Logging/LogMacros.h"
 
-#include "ClimberCharacterMovementComponent.h"
-
 #include "Prototype1Character.generated.h"
 
 struct FKSphylElem;
@@ -16,6 +14,7 @@ class UInputComponent;
 class UInputAction;
 class UInputMappingContext;
 class USkeletalMeshComponent;
+class ClimberCharacterMovementComponent;
 
 struct FInputActionValue;
 struct FHitResult;
@@ -302,12 +301,6 @@ public:
 	bool CanHandInteract(const FHandsContextData& HandData) const;
 
 	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
-
-	// Used for accelerating the hand grab location towards SlipTarget.
-	void AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
-
-	void SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity = false);
-
 	FVector MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta);
 
 	UFUNCTION(BlueprintCallable)

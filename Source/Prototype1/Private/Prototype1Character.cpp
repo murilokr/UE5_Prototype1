@@ -4,6 +4,7 @@
 #include "Prototype1Projectile.h"
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
+#include "ClimberCharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EnhancedInputComponent.h"
@@ -447,20 +448,20 @@ void APrototype1Character::Move(const FInputActionValue& Value)
 	// input is a Vector2D
 	FVector2D MovementVector = Value.Get<FVector2D>();
 
-	// Add a directive for debug mode only here.
-	if (ClimberMovementComponent->MovementMode != MOVE_Flying)
-	{
-		if (Controller != nullptr)
-		{
-			// add movement 
-			AddMovementInput(GetActorForwardVector(), MovementVector.Y);
-			AddMovementInput(GetActorRightVector(), MovementVector.X);
-		}
-	}
-	else
+#ifdef M_DEBUG_ENABLED
+	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
 	{
 		AddMovementInput(FirstPersonCameraComponent->GetForwardVector(), MovementVector.Y);
 		AddMovementInput(FirstPersonCameraComponent->GetRightVector(), MovementVector.X);
+		return;
+	}
+#endif
+
+	if (Controller != nullptr)
+	{
+		// add movement 
+		AddMovementInput(GetActorForwardVector(), MovementVector.Y);
+		AddMovementInput(GetActorRightVector(), MovementVector.X);
 	}
 }
 
@@ -473,18 +474,38 @@ void APrototype1Character::Jump()
 		Super::Jump();
 	}
 
+#ifdef M_DEBUG_ENABLED
 	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
 	{
 		AddMovementInput(FVector::UpVector, 1.0f);
 	}
+#endif
 }
 
 void APrototype1Character::Duck()
 {
+#ifdef M_DEBUG_ENABLED
 	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
 	{
 		AddMovementInput(FVector::UpVector, -1.0f);
 	}
+	else if (ClimberMovementComponent->IsClimbing())
+	{
+		const FHandsContextData HandData = (LeftHandData.IsInteractClimbing()) ? LeftHandData : RightHandData;
+
+		const FVector HandLocation = HandData.GetHandLocation();
+		const FVector HandNormal = HandData.GetHandNormal();
+		// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
+		const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandNormal);
+		const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
+
+		// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
+		const FVector MouseInput = GrabRot.RotateVector(FVector(0, 0, -1.0f));
+		const FVector MoveDir = -MouseInput;
+
+		ClimberMovementComponent->AddHandSlipAccelerationInput(HandData, MoveDir);
+	}
+#endif
 }
 
 void APrototype1Character::ReleaseHand(int HandIndex)
@@ -907,20 +928,22 @@ void APrototype1Character::Interact(int HandIndex)
 	HandData.HandSurfaceLocalNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
 
 	const bool bIsObjectMovable = HandData.HitComponent && HandData.HitComponent->Mobility == EComponentMobility::Movable && HandData.HitComponent->IsSimulatingPhysics();
-	// TODO: Moving "surfaces" will fall on this category. Fix this for the future, this flag is only for objects that we can interact and move.
+	HandData.InteractionType = (bIsObjectMovable) ? EInteractType::INT_Grabbable : EInteractType::INT_Climbable;
+
 	if (bIsObjectMovable)
 	{
+		// TODO: Moving "surfaces" will fall on this category. Fix this for the future, this flag is only for objects that we can interact and move.
 		PhysicsHandle->GrabComponentAtLocation(HandData.HitComponent, HandData.HitBoneName, GrabLocation);
 		HandData.HandObjectLocalLocation = FirstPersonCameraComponent->GetComponentTransform().InverseTransformPosition(GrabLocation);
 		HandData.HitComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Ignore);
 	}
-
-	HandData.InteractionType = (bIsObjectMovable) ? EInteractType::INT_Grabbable : EInteractType::INT_Climbable;
-
-	// Adding a slip here just for debugging purposes
-	const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, GrabNormal).GetSafeNormal();
-	const FVector SlipVector = GrabLocation + SlipDir * 60.f;
-	//AddHandSlipTarget(HandData, SlipVector);
+	else
+	{
+		// Adding a slip here just for debugging purposes
+		//const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, GrabNormal).GetSafeNormal();
+		//const FVector SlipVector = GrabLocation + SlipDir * 60.f;
+		//ClimberMovementComponent->AddHandSlipTarget(HandData, SlipVector);
+	}
 
 
 
@@ -1159,7 +1182,7 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	}
 
 	const FVector HandSlipVector = -HandRelativeUp * (4 + SlipRatio);
-	SetHandSlipVelocity(HandData, HandSlipVector);
+	ClimberMovementComponent->SetHandSlipVelocity(HandData, HandSlipVector);
 	return true;
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + HandSlipVector, 1.0f, FColor::Red, false, 1.25f, 0, 0.5f);
 	//
@@ -1408,25 +1431,6 @@ FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& Ha
 	}
 
 	return HandLocation;
-}
-
-void APrototype1Character::AddHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget)
-{
-	const FVector ValidatedSlipTarget = ValidateHandSlipTarget(HandData, SlipTarget);
-	ClimberMovementComponent->HandSlipTarget = ValidatedSlipTarget;
-}
-
-void APrototype1Character::SetHandSlipVelocity(const FHandsContextData& HandData, const FVector& SlipVelocity, bool bOverrideVelocity)
-{
-	if (bOverrideVelocity)
-	{
-		ClimberMovementComponent->HandSlipVelocity = SlipVelocity;
-	}
-	else
-	{
-		// Add to the current HandSlipVelocity
-		ClimberMovementComponent->HandSlipVelocity += SlipVelocity;
-	}
 }
 
 FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta)
