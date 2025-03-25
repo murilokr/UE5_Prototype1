@@ -47,7 +47,7 @@ private:
 	virtual float GetMaxBrakingDeceleration() const override;
 
 public:
-	void SetHandGrabbing(const FHandsContextData& HandData);
+	void SetHandClimbing(const FHandsContextData& HandData);
 	void ReleaseHand(const FHandsContextData& HandData);
 
 	void UpdateHelperSpring(float SpringIntensityFalloffCustomDuration = -1);

@@ -15,9 +15,13 @@
 
 #include "ClimberCameraManager.h"
 #include "PhysicsEngine/PhysicsAsset.h"
+#include "PhysicsEngine/PhysicsHandleComponent.h"
 #include <Misc/Debug/MDebugHelper.h>
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
+
+//////////////////////////////////////////////////////////////////////////
+// MFMath
 
 namespace MFMath // Murilo's FMath
 {
@@ -175,6 +179,56 @@ namespace MFMath // Murilo's FMath
 	}
 };
 
+
+//////////////////////////////////////////////////////////////////////////
+// FHandsContextData
+
+FVector FHandsContextData::GetHandLocation() const
+{
+	if (!HitActor)
+	{
+		return FVector();
+	}
+
+	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
+	return HitBoneLocalToWorldTransform.TransformPosition(HandSurfaceLocalLocation);
+}
+
+FVector FHandsContextData::GetHandNormal() const
+{
+	if (!HitActor)
+	{
+		return FVector();
+	}
+
+	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
+	return HitBoneLocalToWorldTransform.TransformVector(HandSurfaceLocalNormal);
+}
+
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const
+{
+	FVector HandNormal = GetHandNormal();
+
+	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, RelativeUp).Rotator();
+	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
+
+	// Invert the normal.
+	if (bShouldFlip)
+	{
+		HandNormal = -HandNormal;
+	}
+
+	const FRotator HandRotation = FRotationMatrix::MakeFromYZ(HandNormal, FixedYAxis).Rotator();//FRotationMatrix::MakeFromY(HandNormal).Rotator();
+
+	// Debug
+	//DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHandLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
+
+	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
+	return HandRotation;
+}
+
+
+
 //////////////////////////////////////////////////////////////////////////
 // APrototype1Character
 
@@ -210,6 +264,8 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
+
+	PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
 
 	JointTarget_ElbowL = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("JointTarget_ElbowL"));
 	JointTarget_ElbowL->SetupAttachment(Mesh1P);
@@ -304,10 +360,10 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		EnhancedInputComponent->BindAction(FreeLookAction, ETriggerEvent::Completed, this, &APrototype1Character::EndFreeLook);
 
 		// Grabbing
-		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Started, this, &APrototype1Character::GrabL);
-		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Completed, this, &APrototype1Character::StopGrabL);
-		EnhancedInputComponent->BindAction(GrabActionR, ETriggerEvent::Started, this, &APrototype1Character::GrabR);
-		EnhancedInputComponent->BindAction(GrabActionR, ETriggerEvent::Completed, this, &APrototype1Character::StopGrabR);
+		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Started, this, &APrototype1Character::InteractL);
+		EnhancedInputComponent->BindAction(GrabActionL, ETriggerEvent::Completed, this, &APrototype1Character::StopInteractL);
+		EnhancedInputComponent->BindAction(GrabActionR, ETriggerEvent::Started, this, &APrototype1Character::InteractR);
+		EnhancedInputComponent->BindAction(GrabActionR, ETriggerEvent::Completed, this, &APrototype1Character::StopInteractR);
 	}
 	else
 	{
@@ -344,6 +400,16 @@ void APrototype1Character::Tick(float DeltaSeconds)
 
 	TraceForHand(RightHandData);
 	TraceForHand(LeftHandData);
+
+	if (IsGrabbing() && !IsFreeLooking)
+	{
+		MoveGrabbedObject(LeftHandData);
+		MoveGrabbedObject(RightHandData);
+
+		// if (IA_R) // Penumbra "Interact" mode.
+		//	add_mouse_dir_to_physicshandle_target_location
+		//	return;
+	}
 
 	InterpHandsAndElbow(0, DeltaSeconds);
 	InterpHandsAndElbow(1, DeltaSeconds);
@@ -423,12 +489,12 @@ void APrototype1Character::Duck()
 
 void APrototype1Character::ReleaseHand(int HandIndex)
 {
-	StopGrabbing(HandIndex);
+	StopInteracting(HandIndex);
 }
 
 void APrototype1Character::ReleaseHand(const FHandsContextData& HandData)
 {
-	StopGrabbing(HandData.HandIndex);
+	StopInteracting(HandData.HandIndex);
 }
 
 void APrototype1Character::StartFallingToDeathTime()
@@ -524,7 +590,7 @@ void APrototype1Character::Look(const FInputActionValue& Value)
 
 	// If we are grabbing something, send mouse input to hands instead.
 	// But if we are looking around, ignore sending data to hands.
-	if (IsGrabbing() && !IsFreeLooking)
+	if (IsClimbing() && !IsFreeLooking)
 	{
 		MoveHand(LeftHandData, LookAxisVector);
 		MoveHand(RightHandData, LookAxisVector);
@@ -564,9 +630,11 @@ void APrototype1Character::OnFallDeath_Implementation()
 	}
 }
 
+
+
 void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector)
 {
-	if (!HandData.IsGrabbing)
+	if (!HandData.IsInteractClimbing())
 	{
 		return;
 	}
@@ -580,14 +648,15 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
 	const FVector MoveDir = -MouseInput;
+	
+	// Debugs
+	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("MouseInput: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MouseInput * MouseClimbingSensitivity).Length(), MouseInput.Length(), *MouseInput.ToString()));
+	GEngine->AddOnScreenDebugMessage(54, 2.5f, FColor::Blue, FString::Printf(TEXT("MoveDir: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MoveDir * MouseClimbingSensitivity).Length(), MoveDir.Length(), *MoveDir.ToString()));
+
 	// HandMoveDir should not exceed a unit vector, we only want the mouse sensitivity to help with the movement, but we can't exceed 1
 	// otherwise we would be applying more force than designed in our CMC
 	///ClimberMovementComponent->HandMoveDir += MFMath::SafeMultiplyUnderUnitVector(MoveDir, MouseClimbingSensitivity);
 	ClimberMovementComponent->HandMoveDir += MoveDir * MouseClimbingSensitivity;
-
-	// Debugs
-	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("MouseInput: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MouseInput * MouseClimbingSensitivity).Length(), MouseInput.Length(), *MouseInput.ToString()));
-	GEngine->AddOnScreenDebugMessage(54, 2.5f, FColor::Blue, FString::Printf(TEXT("MoveDir: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MoveDir * MouseClimbingSensitivity).Length(), MoveDir.Length(), *MoveDir.ToString()));
 
 	/** GrabRot relative to HandLocation */
 	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
@@ -606,19 +675,22 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 
 	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
 	// End of Debugs
+}
 
+void APrototype1Character::MoveGrabbedObject(FHandsContextData& HandData)
+{
+	if (!HandData.IsInteractGrabbing() || !PhysicsHandle->GrabbedComponent)
+	{
+		return;
+	}
 
-	// TODO: This might get used to add "Fake" anchor objects. (Objects that will fall once you grab them, to add risks)
-	//const FVector GrabTargetPosition = HandData.GetGrabPosition(TraceStart, TraceDir);
-
-	// When we want to GRAB and MOVE an object. do this. Also consider adding a PhysicsHandle instead, if the object is grabbable.
-	//const float DragForce = 500.0f;
-	//const FVector MoveObjectVectorWithForce = (GrabTargetPosition - HandLocation) * (DragForce / DeltaSeconds);
+	const FVector WorldHandLocation = FirstPersonCameraComponent->GetComponentTransform().TransformPosition(HandData.HandObjectLocalLocation);
+	PhysicsHandle->SetTargetLocation(WorldHandLocation);
 }
 
 void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 {
-	if (HandData.IsGrabbing)
+	if (HandData.IsInteracting())
 	{
 		HandData.CurrentFrameTracedHitResult = FHitResult(-1.0f);
 		return;
@@ -668,7 +740,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 			}
 #endif
 
-			Grab(HandData.HandIndex);
+			Interact(HandData.HandIndex);
 			HandInputBuffer = 0.f;
 		}
 	}
@@ -686,7 +758,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 		if (GetWorld()->LineTraceSingleByChannel(HitResult, ClavicleBoneLocation, SweepTraceEnd, ECollisionChannel::ECC_PhysicsBody, QueryParams))
 		{			
 			SweepTraceEndFixed = HitResult.Location;
-			SweepPlaneNormal = HitResult.Normal;	
+			SweepPlaneNormal = HitResult.Normal;
 		}					
 
 		const FVector SweepDir = SweepTraceStartFixed - SweepTraceEndFixed;
@@ -750,7 +822,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 					if (HandInputBuffer > 0.f)
 					{
 						GEngine->AddOnScreenDebugMessage(40, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
-						Grab(HandData.HandIndex);
+						Interact(HandData.HandIndex);
 						HandInputBuffer = 0.f;
 					}
 					return;
@@ -798,17 +870,17 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 //			if (HandInputBuffer > 0.f)
 //			{
 //				GEngine->AddOnScreenDebugMessage(40, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
-//				Grab(HandData.HandIndex);
+//				Interact(HandData.HandIndex);
 //				HandInputBuffer = 0.f;
 //			}
 //		}
 	}
 }
 
-void APrototype1Character::Grab(int HandIndex)
+void APrototype1Character::Interact(int HandIndex)
 {
 	FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
-	if (HandData.IsGrabbing)
+	if (HandData.IsInteracting())
 	{
 		return;
 	}
@@ -823,27 +895,27 @@ void APrototype1Character::Grab(int HandIndex)
 		StoreGrabInputBuffer(HandData);
 		return;
 	}
-
+	
 	SetElbowSetup(HandIndex, ESETUP_Climbing);
 
-	HandData.IsGrabbing = true;
 	HandData.HitActor = HitResult.GetActor();
 	HandData.HitComponent = HitResult.GetComponent();
 	HandData.HitBoneName = HitResult.BoneName;
 
-	// Calculate GrabPositionT
-	//HandData.GrabPositionT = 0.0f;
-	//const FVector PositionDir = GrabLocation - TraceStart;
-	//if ((TraceDir | PositionDir) >= 0.0f)
-	//{
-	//	// GrabLocation is inline with TraceDir.
-	//	HandData.GrabPositionT = FMath::Clamp(PositionDir.SquaredLength() / TraceLength, 0.0f, 1.0f);
-	//}
-
 	FTransform HitBoneWorldToLocalTransform = HitResult.GetActor()->GetActorTransform(); //HitResult.Component->GetSocketTransform(HitResult.BoneName).Inverse();
-	HandData.LocalHandLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(GrabLocation);
-	HandData.LocalHandNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
+	HandData.HandSurfaceLocalLocation = HitBoneWorldToLocalTransform.InverseTransformPosition(GrabLocation);
+	HandData.HandSurfaceLocalNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
 
+	const bool bIsObjectMovable = HandData.HitComponent && HandData.HitComponent->Mobility == EComponentMobility::Movable && HandData.HitComponent->IsSimulatingPhysics();
+	// TODO: Moving "surfaces" will fall on this category. Fix this for the future, this flag is only for objects that we can interact and move.
+	if (bIsObjectMovable)
+	{
+		PhysicsHandle->GrabComponentAtLocation(HandData.HitComponent, HandData.HitBoneName, GrabLocation);
+		HandData.HandObjectLocalLocation = FirstPersonCameraComponent->GetComponentTransform().InverseTransformPosition(GrabLocation);
+		HandData.HitComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Ignore);
+	}
+
+	HandData.InteractionType = (bIsObjectMovable) ? EInteractType::INT_Grabbable : EInteractType::INT_Climbable;
 
 	// Adding a slip here just for debugging purposes
 	const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, GrabNormal).GetSafeNormal();
@@ -866,26 +938,39 @@ void APrototype1Character::Grab(int HandIndex)
 	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
 	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
 
-	ClimberMovementComponent->SetHandGrabbing(HandData);
+	if (HandData.IsInteractClimbing())
+	{
+		ClimberMovementComponent->SetHandClimbing(HandData);
+	}
 
 	OnStartGrab(HandData, HandIndex);
 }
 
-void APrototype1Character::StopGrabbing(int HandIndex)
+void APrototype1Character::StopInteracting(int HandIndex)
 {
 	FHandsContextData& HandData = (HandIndex == 0) ? RightHandData : LeftHandData;
 
-	if (!HandData.IsGrabbing)
+	if (!HandData.IsInteracting())
 	{
-		// We weren't grabbing anything.
+		// We weren't interacting with anything.
 		return;
+	}
+
+	// Release grabbed object, if it exists for this hand.
+	if (PhysicsHandle->GrabbedComponent)
+	{
+		PhysicsHandle->GrabbedComponent->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Block);
+		PhysicsHandle->ReleaseComponent();
 	}
 
 	SetElbowSetup(HandIndex, ESETUP_Idle);
 
-	HandData.IsGrabbing = false;
+	if (HandData.IsInteractClimbing())
+	{
+		ClimberMovementComponent->ReleaseHand(HandData);
+	}
 
-	ClimberMovementComponent->ReleaseHand(HandData);
+	HandData.InteractionType = EInteractType::INT_None;
 
 	OnEndGrab(HandData, HandIndex);
 }
@@ -1139,7 +1224,7 @@ FVector APrototype1Character::GetSafeHandLocation(int HandIndex) const
 
 FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandData) const
 {
-	if (!HandData.IsGrabbing)
+	if (!HandData.IsInteracting())
 	{
 		const FTransform MeshToWorld = Mesh1P->GetComponentToWorld();
 		FVector FinalHandLocation = MeshToWorld.TransformPosition(HandData.LocalHandIdleLocation);
@@ -1197,7 +1282,7 @@ FRotator APrototype1Character::GetHandRotation(int HandIndex) const
 
 FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData) const
 {
-	if (!HandData.IsGrabbing)
+	if (!HandData.IsInteracting())
 	{
 		const FTransform MeshToWorld = Mesh1P->GetComponentTransform();
 		return MeshToWorld.TransformRotation(HandData.LocalHandIdleRotation.Quaternion()).Rotator();
@@ -1237,9 +1322,39 @@ FVector APrototype1Character::RotateToWorld(const FHandsContextData& HandData, c
 	return WorldToHandTransform.RotateVector(HandRelative);
 }
 
+bool APrototype1Character::IsInteracting() const
+{
+	return LeftHandData.IsInteracting() || RightHandData.IsInteracting();
+}
+
+bool APrototype1Character::IsHandInteracting(int HandIndex) const
+{
+	return IsHandInteracting((HandIndex == 0) ? RightHandData : LeftHandData);
+}
+
+bool APrototype1Character::IsHandInteracting(const FHandsContextData& HandData) const
+{
+	return HandData.IsInteracting();
+}
+
+bool APrototype1Character::IsClimbing() const
+{
+	return LeftHandData.IsInteractClimbing() || RightHandData.IsInteractClimbing();
+}
+
+bool APrototype1Character::IsHandClimbing(int HandIndex) const
+{
+	return IsHandClimbing((HandIndex == 0) ? RightHandData : LeftHandData);
+}
+
+bool APrototype1Character::IsHandClimbing(const FHandsContextData& HandData) const
+{
+	return HandData.IsInteractClimbing();
+}
+
 bool APrototype1Character::IsGrabbing() const
 {
-	return LeftHandData.IsGrabbing || RightHandData.IsGrabbing;
+	return LeftHandData.IsInteractGrabbing() || RightHandData.IsInteractGrabbing();
 }
 
 bool APrototype1Character::IsHandGrabbing(int HandIndex) const
@@ -1249,7 +1364,7 @@ bool APrototype1Character::IsHandGrabbing(int HandIndex) const
 
 bool APrototype1Character::IsHandGrabbing(const FHandsContextData& HandData) const
 {
-	return HandData.IsGrabbing;
+	return HandData.IsInteractGrabbing();
 }
 
 bool APrototype1Character::CanHandInteract(int HandIndex) const
@@ -1336,8 +1451,8 @@ FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, 
 	DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 0.25f, 0, 1.0f);
 
 	FTransform HandLocalToWorldTransform = HandData.HitActor->GetActorTransform(); //HitActor should remain the same.
-	HandData.LocalHandLocation = HandLocalToWorldTransform.InverseTransformPosition(HandMoveDelta);
-	HandData.LocalHandNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
+	HandData.HandSurfaceLocalLocation = HandLocalToWorldTransform.InverseTransformPosition(HandMoveDelta);
+	HandData.HandSurfaceLocalNormal = HandLocalToWorldTransform.InverseTransformVector(MoveDeltaHitResult.ImpactNormal);
 
 	return HandMoveDelta;
 }
@@ -1386,77 +1501,27 @@ bool APrototype1Character::CanJumpInternal_Implementation() const
 	return CharacterCanJump || IsCoyoteTime;
 }
 
-void APrototype1Character::GrabR(const FInputActionValue& Value)
+void APrototype1Character::InteractR(const FInputActionValue& Value)
 {
-	Grab(0);
+	Interact(0);
 }
 
-void APrototype1Character::StopGrabR(const FInputActionValue& Value)
+void APrototype1Character::StopInteractR(const FInputActionValue& Value)
 {
 	RightHandGrabInputBuffer = 0.f;
-	StopGrabbing(0);
+	StopInteracting(0);
 }
 
-void APrototype1Character::GrabL(const FInputActionValue& Value)
+void APrototype1Character::InteractL(const FInputActionValue& Value)
 {
-	Grab(1);
+	Interact(1);
 }
 
-void APrototype1Character::StopGrabL(const FInputActionValue& Value)
+void APrototype1Character::StopInteractL(const FInputActionValue& Value)
 {
 	LeftHandGrabInputBuffer = 0.f;
-	StopGrabbing(1);
+	StopInteracting(1);
 }
-
-FVector FHandsContextData::GetHandLocation() const
-{
-	if (!HitActor)
-	{
-		return FVector();
-	}
-
-	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
-	return HitBoneLocalToWorldTransform.TransformPosition(LocalHandLocation);
-}
-
-FVector FHandsContextData::GetHandNormal() const
-{
-	if (!HitActor)
-	{
-		return FVector();
-	}
-
-	FTransform HitBoneLocalToWorldTransform = HitActor->GetActorTransform();
-	return HitBoneLocalToWorldTransform.TransformVector(LocalHandNormal);
-}
-
-FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const
-{
-	FVector HandNormal = GetHandNormal();
-	
-	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, RelativeUp).Rotator();
-	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
-
-	// Invert the normal.
-	if (bShouldFlip)
-	{	
-		HandNormal = -HandNormal;
-	}
-	
-	const FRotator HandRotation = FRotationMatrix::MakeFromYZ(HandNormal, FixedYAxis).Rotator();//FRotationMatrix::MakeFromY(HandNormal).Rotator();
-
-	// Debug
-	//DrawDebugCoordinateSystem(GEngine->GetWorld(), GetHandLocation(), HandRotation, 10.0f, false, -1.0f, 0, 1.0f);
-
-	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
-	return HandRotation;
-}
-
-FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const
-{
-	return TraceStart + TraceDir * GrabPositionT;
-}
-
 
 
 // Hand is not ready to grab.
@@ -1523,7 +1588,7 @@ FVector FHandsContextData::GetGrabPosition(const FVector TraceStart, const FVect
 //					if (HandInputBuffer > 0.f)
 //					{
 //						GEngine->AddOnScreenDebugMessage(40, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
-//						Grab(HandData.HandIndex);
+//						Interact(HandData.HandIndex);
 //						HandInputBuffer = 0.f;
 //					}
 //					return;

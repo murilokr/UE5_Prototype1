@@ -31,6 +31,16 @@ enum EElbowSetupType
 	ESETUP_MAX			UMETA(Hidden),
 };
 
+UENUM(BlueprintType)
+enum EInteractType
+{
+	INT_None = 0		UMETA(Hidden),
+	INT_Climbable = 1	UMETA(DisplayName = "Interact Type - Climbable"),
+	INT_Grabbable = 2	UMETA(DisplayName = "Interact Type - Grabbable"),
+	INT_Use = 3			UMETA(DisplayName = "Interact Type - Use"),
+	INT_MAXCOUNT = 4	UMETA(Hidden),
+};
+
 USTRUCT(BlueprintType)
 struct FElbowSetup
 {
@@ -58,7 +68,7 @@ struct FHandsContextData
 	int HandIndex;
 
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
-	bool IsGrabbing;
+	TEnumAsByte<EInteractType> InteractionType;
 
 	// This will also be used for interactables. (Maybe have an interact type? i.e: climbing surface, interact, physical object grab, etc.)
 	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
@@ -76,12 +86,17 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
 	FName HandBoneName = "hand_r";
 
-	// Maybe we'll remove this.
-	UPROPERTY(BlueprintReadWrite, VisibleAnywhere)
-	float GrabPositionT;
-
+	// Location of the hand grab in local player space
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-	FVector LocalHandLocation;
+	FVector HandObjectLocalLocation;
+
+	// Location of the hand, local to the climbable surface.
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	FVector HandSurfaceLocalLocation;
+
+	// Normal of the hand surface normal, local to the climbable surface.
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	FVector HandSurfaceLocalNormal;
 
 	// These are locally static, but change in world, so we'll have to convert it when needed.
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
@@ -90,9 +105,6 @@ struct FHandsContextData
 	// These are locally static, but change in world, so we'll have to convert it when needed.
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FRotator LocalHandIdleRotation;
-
-	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
-	FVector LocalHandNormal;
 
 	// Hit Result Stuff
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
@@ -111,16 +123,16 @@ struct FHandsContextData
 	FKSphylElem* HandCollisionPrimitive = nullptr;
 	FCollisionShape HandCollisionShape;
 
+	const bool IsInteracting() const { return InteractionType > 0 && InteractionType < 4; }
+	const bool IsInteractClimbing() const { return InteractionType == EInteractType::INT_Climbable; }
+	const bool IsInteractGrabbing() const { return InteractionType == EInteractType::INT_Grabbable; }
+
 	// Hand Location
 	FVector GetHandLocation() const;
 
 	FVector GetHandNormal() const;
 
 	FRotator GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const;
-
-	// Grab Target Position.
-	FVector GetGrabPosition(const FVector TraceStart, const FVector TraceDir) const;
-
 
 	// Per frame values
 	FHitResult CurrentFrameTracedHitResult = FHitResult(-1.0f);
@@ -154,6 +166,9 @@ public:
 	/** First person camera */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Camera, meta = (AllowPrivateAccess = "true"))
 	UCameraComponent* FirstPersonCameraComponent;
+
+	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
+	TObjectPtr<class UPhysicsHandleComponent> PhysicsHandle;
 
 	/** JointTarget for Left Elbow. This is used for IK Animations. */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
@@ -261,10 +276,23 @@ public:
 	FVector RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const;
 	FVector RotateToWorld(const FHandsContextData& HandData, const FVector& HandRelative) const;
 
-	// IsGrabbing
+	UFUNCTION(BlueprintPure)
+	bool IsInteracting() const;
+
+	UFUNCTION(BlueprintPure)
+	bool IsHandInteracting(int HandIndex) const;
+	bool IsHandInteracting(const FHandsContextData& HandData) const;
+
+	UFUNCTION(BlueprintPure)
+	bool IsClimbing() const;
+	
+	UFUNCTION(BlueprintPure)
+	bool IsHandClimbing(int HandIndex) const;
+	bool IsHandClimbing(const FHandsContextData& HandData) const;
+
 	UFUNCTION(BlueprintPure)
 	bool IsGrabbing() const;
-	
+
 	UFUNCTION(BlueprintPure)
 	bool IsHandGrabbing(int HandIndex) const;
 	bool IsHandGrabbing(const FHandsContextData& HandData) const;
@@ -445,31 +473,33 @@ protected:
 
 	virtual bool CanJumpInternal_Implementation() const override;
 
-	/** Called for grabbing input Right */
-	void GrabR(const FInputActionValue& Value);
+	/** Called for interacting input Right */
+	void InteractR(const FInputActionValue& Value);
 
-	/** Called for grabbing input Right */
-	void StopGrabR(const FInputActionValue& Value);
+	/** Called for interacting input Right */
+	void StopInteractR(const FInputActionValue& Value);
 
-	/** Called for grabbing input Left */
-	void GrabL(const FInputActionValue& Value);
+	/** Called for interacting input Left */
+	void InteractL(const FInputActionValue& Value);
 
-	/** Called for grabbing input Left */
-	void StopGrabL(const FInputActionValue& Value);
+	/** Called for interacting input Left */
+	void StopInteractL(const FInputActionValue& Value);
 
 	void TraceForHand(FHandsContextData& HandData);
 
-	/** Called for grabbing input */
-	void Grab(const int HandIndex);
+	/** Called for interacting input */
+	void Interact(const int HandIndex);
+
+	/** Called for interacting input */
+	void StopInteracting(const int HandIndex);
 
 	/** Called for mouse input for moving the hands */
 	void MoveHand(FHandsContextData& HandData, FVector2D LookAxisVector);
 
+	void MoveGrabbedObject(FHandsContextData& HandData);
+
 	void StoreGrabInputBuffer(const FHandsContextData& HandData);
 	void ProcessInputBuffers(float DeltaSeconds);
-
-	/** Called for grabbing input */
-	void StopGrabbing(const int HandIndex);
 
 	void SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType);
 	void InterpHandsAndElbow(const int HandIndex, float DeltaSeconds);

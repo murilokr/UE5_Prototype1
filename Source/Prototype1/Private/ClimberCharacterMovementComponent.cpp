@@ -2,6 +2,7 @@
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/PhysicsVolume.h"
 #include "Prototype1Character.h"
+#include "Kismet/KismetMathLibrary.h"
 
 namespace MovementClimbingUtils
 {
@@ -51,10 +52,10 @@ namespace MovementClimbingUtils
 				//// Apply force to Object B (attached object)
 				//FVector ForceToApply = ForceMagnitude * ForceDirection * GrabObject->GetMass() * DeltaTime;		
 				//const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToApply);
-				//GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, NAME_None);
+				//GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.HandSurfaceLocalLocation, NAME_None);
 
 
-				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation), GrabObjectLocalToWorld.InverseTransformPosition(HandData.LocalHandLocation) + ForceToApply, 2.f, FColor::Green, false, 0.025f, 0, 1.f);
+				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectLocalToWorld.InverseTransformPosition(HandData.HandSurfaceLocalLocation), GrabObjectLocalToWorld.InverseTransformPosition(HandData.HandSurfaceLocalLocation) + ForceToApply, 2.f, FColor::Green, false, 0.025f, 0, 1.f);
 				
 				GEngine->AddOnScreenDebugMessage(102, DeltaTime, FColor::Yellow, TEXT("UPDATE GRABBABLE OBJECT VELOCITY"));
 				const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
@@ -89,16 +90,16 @@ namespace MovementClimbingUtils
 				{
 					//ForceToAddToObject = ForceToAddToObject / DeltaTime; // Impulse to Force (if Impulse was multiplied by DeltaTime internally)
 					const FVector ForceToAddToObjectLocal = GrabObjectLocalToWorld.InverseTransformVector(ForceToAddToObject);
-					GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.LocalHandLocation, HandData.HitBoneName);
+					GrabObject->AddForceAtLocationLocal(ForceToAddToObjectLocal, HandData.HandSurfaceLocalLocation, HandData.HitBoneName);
 				}
 				else
 				{
 					const FVector ImpulseToAddToObject = ForceToAddToObject * DeltaTime; // Force to Impulse
-					GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation), HandData.HitBoneName);
+					GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.HandSurfaceLocalLocation), HandData.HitBoneName);
 				}
 
 				// Debugs
-				const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.LocalHandLocation);
+				const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.HandSurfaceLocalLocation);
 				DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
 				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
 				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
@@ -241,7 +242,7 @@ void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, c
 
 	if (ClimberCharacterOwner)
 	{
-		if (ClimberCharacterOwner->IsGrabbing())
+		if (ClimberCharacterOwner->IsClimbing())
 		{
 			HandMoveDir = FVector::ZeroVector;
 			SetMovementMode(EMovementMode::MOVE_Custom, ECustomMovementMode::CMOVE_Climbing);
@@ -282,7 +283,7 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 
 	// We are now going to check if we are going in front of the hands, and if we are, stop forcing "forward" horizontal movement.
 	float RightHandMeshDir = 1.f;
-	if (ClimberCharacterOwner->IsHandGrabbing(0))
+	if (ClimberCharacterOwner->IsHandClimbing(0))
 	{
 		const FVector MeshToRightHand = (ClimberCharacterOwner->GetHandLocation(0) - ClimberCharacterOwner->GetActorLocation()).GetSafeNormal();
 		RightHandMeshDir = FVector::DotProduct(CharacterForward, MeshToRightHand);
@@ -296,7 +297,7 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 	}
 	
 	float LeftHandMeshDir = 1.f;
-	if (ClimberCharacterOwner->IsHandGrabbing(1))
+	if (ClimberCharacterOwner->IsHandClimbing(1))
 	{
 		const FVector MeshToLeftHand = (ClimberCharacterOwner->GetHandLocation(1) - ClimberCharacterOwner->GetActorLocation()).GetSafeNormal();
 		LeftHandMeshDir = FVector::DotProduct(CharacterForward, MeshToLeftHand);
@@ -337,7 +338,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 	if (ClimberCharacterOwner)
 	{
-		if (!ClimberCharacterOwner->IsGrabbing())
+		if (!ClimberCharacterOwner->IsClimbing())
 		{
 			SetMovementMode(EMovementMode::MOVE_Falling);
 			StartNewPhysics(DeltaSeconds, Iterations);
@@ -382,10 +383,11 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				FVector BodyOffset = Velocity + HandSlipVelocity;
 				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->LeftHandData);
 				BodyOffset += MovementClimbingUtils::GetGrabbableObjectVelocity(ClimberCharacterOwner->RightHandData);
+				//BodyOffset += ClimbingAcceleration * timeTick;
 				BodyOffset = BodyOffset * timeTick;
 
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
-				if (ClimberCharacterOwner->LeftHandData.IsGrabbing)
+				if (ClimberCharacterOwner->LeftHandData.IsInteractClimbing())
 				{
 					// Calculate HandSlipAcceleration
 					// Hardcoded for left hand for now, for debugging purposes. On the future, each hand should have their own slip end point.
@@ -486,7 +488,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 		if (ClimberCharacterOwner)
 		{
-			if (!ClimberCharacterOwner->IsGrabbing())
+			if (!ClimberCharacterOwner->IsClimbing())
 			{
 				SetMovementMode(EMovementMode::MOVE_Falling);
 				//StartNewPhysics(timeTick, Iterations);
@@ -505,7 +507,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int HandIndex, float DeltaTime, FVector& ClimbingAcceleration, FVector& HorizontalHandsControlAcceleration, const FVector& BodyOffset)
 {
 	FHandsContextData& HandData = ClimberCharacterOwner->GetMutableHandData(HandIndex);
-	if (!HandData.IsGrabbing)
+	if (!HandData.IsInteractClimbing())
 	{
 		return;
 	}
@@ -600,7 +602,7 @@ float UClimberCharacterMovementComponent::GetMaxBrakingDeceleration() const
 	return Super::GetMaxBrakingDeceleration();
 }
 
-void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData& HandData)
+void UClimberCharacterMovementComponent::SetHandClimbing(const FHandsContextData& HandData)
 {
 	UpdateHelperSpring(HelperSpringIntensityIdleFalloffDuration);
 	
@@ -611,11 +613,6 @@ void UClimberCharacterMovementComponent::SetHandGrabbing(const FHandsContextData
 	{
 		PrevHandObjectLocation = GrabObject->GetComponentLocation();
 		PrevHandObjectVelocity = FVector::ZeroVector;
-
-		if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
-		{
-			GrabObject->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Ignore);
-		}
 	}
 }
 
@@ -627,13 +624,6 @@ void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& Ha
 	PrevHandObjectLocation = FVector::ZeroVector;
 	PrevHandObjectVelocity = FVector::ZeroVector;
 
-	if (UPrimitiveComponent* GrabObject = HandData.HitComponent)
-	{
-		if (MovementClimbingUtils::IsDynamicGrabObject(GrabObject))
-		{
-			GrabObject->SetCollisionResponseToChannel(ECollisionChannel::ECC_Pawn, ECollisionResponse::ECR_Block);
-		}
-	}
 }
 
 void UClimberCharacterMovementComponent::UpdateHelperSpring(float SpringIntensityFalloffCustomDuration)
