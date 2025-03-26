@@ -1,7 +1,7 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 #include "Prototype1GameMode.h"
-#include "Prototype1Character.h"
+#include "Characters/Prototype1Character.h"
 #include "UObject/ConstructorHelpers.h"
 
 APrototype1GameMode::APrototype1GameMode()

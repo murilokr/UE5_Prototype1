@@ -1,10 +1,10 @@
 ﻿// Copyright Epic Games, Inc. All Rights Reserved.
 
-#include "Prototype1Character.h"
+#include "Characters/Prototype1Character.h"
 #include "Prototype1Projectile.h"
 #include "Animation/AnimInstance.h"
 #include "Camera/CameraComponent.h"
-#include "ClimberCharacterMovementComponent.h"
+#include "Components/ClimberCharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "EnhancedInputComponent.h"
@@ -14,7 +14,7 @@
 #include <Kismet/KismetSystemLibrary.h>
 #include <Kismet/KismetMathLibrary.h>
 
-#include "ClimberCameraManager.h"
+#include "Managers/ClimberCameraManager.h"
 #include "PhysicsEngine/PhysicsAsset.h"
 #include "PhysicsEngine/PhysicsHandleComponent.h"
 #include <Misc/Debug/MDebugHelper.h>

@@ -1,5 +1,5 @@
-#include "ClimberCameraManager.h"
-#include "Prototype1Character.h"
+#include "Managers/ClimberCameraManager.h"
+#include "Characters/Prototype1Character.h"
 #include "Camera/CameraComponent.h"
 
 #include "Kismet/KismetMathLibrary.h"

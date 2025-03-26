@@ -1,5 +1,4 @@
-//#include "MDebugHelper.h"
-#include <Misc/Debug/MDebugHelper.h>
+#include "Misc/Debug/MDebugHelper.h"
 
 TAutoConsoleVariable<int32> MDebugHelper::CVarDrawHandTraceDebug(
     TEXT("r.Debug.DrawHandTraceDebug"),

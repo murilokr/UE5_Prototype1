@@ -1,7 +1,7 @@
-#include "ClimberCharacterMovementComponent.h"
+#include "Components/ClimberCharacterMovementComponent.h"
 #include "Components/CapsuleComponent.h"
 #include "GameFramework/PhysicsVolume.h"
-#include "Prototype1Character.h"
+#include "Characters/Prototype1Character.h"
 #include "Kismet/KismetMathLibrary.h"
 
 namespace MovementClimbingUtils
@@ -388,6 +388,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
 				ComputeHandAccelerations(1, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
+				UE_LOG(LogTemp, Display, TEXT("MaxAcceleration After: %f"), MaxAcceleration);
 
 				// Force Full HandControlAcceleration.
 				if (HorizontalHandsControlAcceleration.SizeSquared() > UE_SMALL_NUMBER)
@@ -574,10 +575,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		HandMovementData.HandSlipTarget = FVector::ZeroVector;
 	}
 
-	HandMovementData.HandSlipVelocity = (NewHandLocation - OldHandLocation) / DeltaTime;
-
-
-	UE_LOG(LogTemp, Display, TEXT("MaxAcceleration After: %f"), MaxAcceleration);
+	HandMovementData.HandSlipVelocity = (NewHandLocation - OldHandLocation) / DeltaTime;	
 }
 
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
