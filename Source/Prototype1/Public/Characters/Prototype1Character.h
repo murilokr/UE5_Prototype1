@@ -19,6 +19,8 @@ class ClimberCharacterMovementComponent;
 struct FInputActionValue;
 struct FHitResult;
 
+enum EInteractType : int;
+
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
 UENUM(BlueprintType)
@@ -28,16 +30,6 @@ enum EElbowSetupType
 	ESETUP_Idle			UMETA(DisplayName = "Elbow - Idle Setup"),
 	ESETUP_Mantling		UMETA(DisplayName = "Elbow - Mantling Setup"), // Unused
 	ESETUP_MAX			UMETA(Hidden),
-};
-
-UENUM(BlueprintType)
-enum EInteractType
-{
-	INT_None = 0		UMETA(Hidden),
-	INT_Climbable = 1	UMETA(DisplayName = "Interact Type - Climbable"),
-	INT_Grabbable = 2	UMETA(DisplayName = "Interact Type - Grabbable"),
-	INT_Use = 3			UMETA(DisplayName = "Interact Type - Use"),
-	INT_MAXCOUNT = 4	UMETA(Hidden),
 };
 
 USTRUCT(BlueprintType)
@@ -122,9 +114,9 @@ struct FHandsContextData
 	FKSphylElem* HandCollisionPrimitive = nullptr;
 	FCollisionShape HandCollisionShape;
 
-	const bool IsInteracting() const { return InteractionType > 0 && InteractionType < 4; }
-	const bool IsInteractClimbing() const { return InteractionType == EInteractType::INT_Climbable; }
-	const bool IsInteractGrabbing() const { return InteractionType == EInteractType::INT_Grabbable; }
+	bool IsInteracting() const { return InteractionType > 0 && InteractionType < 4; }
+	bool IsInteractClimbing() const;
+	bool IsInteractGrabbing() const;
 
 	// Hand Location
 	FVector GetHandLocation() const;

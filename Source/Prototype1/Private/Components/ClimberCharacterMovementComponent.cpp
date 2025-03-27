@@ -388,7 +388,6 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 				ComputeHandAccelerations(0, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
 				ComputeHandAccelerations(1, timeTick, ClimbingAcceleration, HorizontalHandsControlAcceleration, BodyOffset);
-				UE_LOG(LogTemp, Display, TEXT("MaxAcceleration After: %f"), MaxAcceleration);
 
 				// Force Full HandControlAcceleration.
 				if (HorizontalHandsControlAcceleration.SizeSquared() > UE_SMALL_NUMBER)
@@ -538,7 +537,6 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	// HandSlip Calculation.
 	// 
 	// Calculate HandSlipAcceleration
-	UE_LOG(LogTemp, Display, TEXT("MaxAcceleration B4: %f | Set to -> %f"), MaxAcceleration, HandSlipMaxAcceleration);
 	TGuardValue<float> RestoreMaxAccelerationAfter(MaxAcceleration, HandSlipMaxAcceleration);
 	FVector HandSlipAcceleration = GetMaxAcceleration() * ConsumeSlipHandInputVector(HandData).GetClampedToMaxSize(1.0f);
 
