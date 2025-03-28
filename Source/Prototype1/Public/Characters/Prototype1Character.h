@@ -443,6 +443,10 @@ protected:
 	virtual void Jump() override;
 	void Duck();
 
+#if WITH_EDITOR
+	void FlyDown();
+#endif
+
 	/** Called for looking input */
 	void Look(const FInputActionValue& Value);
 

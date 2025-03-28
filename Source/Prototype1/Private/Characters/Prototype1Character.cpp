@@ -360,7 +360,11 @@ void APrototype1Character::SetupPlayerInputComponent(UInputComponent* PlayerInpu
 		EnhancedInputComponent->BindAction(JumpAction, ETriggerEvent::Completed, this, &ACharacter::StopJumping);
 
 		// Ducking (fly down)
-		EnhancedInputComponent->BindAction(DuckAction, ETriggerEvent::Triggered, this, &APrototype1Character::Duck);
+		EnhancedInputComponent->BindAction(DuckAction, ETriggerEvent::Started, this, &APrototype1Character::Duck);
+#if WITH_EDITOR
+		// Used for Flying Down in Debug God mode.
+		EnhancedInputComponent->BindAction(DuckAction, ETriggerEvent::Triggered, this, &APrototype1Character::FlyDown);
+#endif
 
 		// Moving
 		EnhancedInputComponent->BindAction(MoveAction, ETriggerEvent::Triggered, this, &APrototype1Character::Move);
@@ -494,10 +498,26 @@ void APrototype1Character::Jump()
 
 void APrototype1Character::Duck()
 {
-#ifdef M_DEBUG_ENABLED
+	if (!ClimberMovementComponent->IsClimbing())
+	{
+		if (bIsCrouched)
+		{
+			UnCrouch();
+		}
+		else
+		{
+			Crouch();
+		}
+	}
+}
+
+#if WITH_EDITOR
+void APrototype1Character::FlyDown()
+{
 	if (ClimberMovementComponent->MovementMode == MOVE_Flying)
 	{
 		AddMovementInput(FVector::UpVector, -1.0f);
+		return;
 	}
 	else if (ClimberMovementComponent->IsClimbing())
 	{
@@ -514,9 +534,10 @@ void APrototype1Character::Duck()
 		const FVector MoveDir = -MouseInput;
 
 		ClimberMovementComponent->AddHandSlipAccelerationInput(HandData, MoveDir);
+		return;
 	}
-#endif
 }
+#endif
 
 void APrototype1Character::ReleaseHand(int HandIndex)
 {
@@ -953,7 +974,7 @@ void APrototype1Character::Interact(int HandIndex)
 	HandData.HandSurfaceLocalNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
 
 	UInteractableActorComponent* InteractableActorComponent = UInteractableActorComponent::GetComponentFromActor(HandData.HitActor);
-	ensureAlwaysMsgf(InteractableActorComponent, TEXT("Traced actor %s must have UInteractableActorComponent, by default treat them as interactable, but I should author them"), *HandData.HitActor->GetName());
+	ensureAlwaysMsgf(InteractableActorComponent, TEXT("Traced actor %s must have UInteractableActorComponent, by default treat them as interactable, but I should author them using the editor tool \"Add InteractableActorComponent to StaticMeshes\""), *HandData.HitActor->GetName());
 
 	bool bIsObjectMovable = HandData.HitComponent && HandData.HitComponent->Mobility == EComponentMobility::Movable && HandData.HitComponent->IsSimulatingPhysics(); // Default
 	HandData.InteractionType = (bIsObjectMovable) ? EInteractType::INT_Grabbable : EInteractType::INT_Climbable; // Default
