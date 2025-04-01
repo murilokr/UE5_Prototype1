@@ -22,6 +22,8 @@
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
+#define M_SAFE_WORLD_PERPENDICULAR_DOT 0.2
+
 //////////////////////////////////////////////////////////////////////////
 // MFMath
 
@@ -207,11 +209,10 @@ FVector FHandsContextData::GetHandNormal() const
 	return HitBoneLocalToWorldTransform.TransformVector(HandSurfaceLocalNormal);
 }
 
-FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const
+FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector RelativeRight, const FVector RelativeUp) const
 {
 	FVector HandNormal = GetHandNormal();
-
-	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, RelativeUp).Rotator();
+	const FRotator GrabRot = GetGrabRotation(RelativeRight, RelativeUp);
 	FVector FixedYAxis = GrabRot.RotateVector(-FVector::YAxisVector);
 
 	// Invert the normal.
@@ -227,6 +228,62 @@ FRotator FHandsContextData::GetHandRotation(bool bShouldFlip, const FVector Rela
 
 	// Hand bones are oriented towards Y, which is why we don't get OrientationVector.
 	return HandRotation;
+}
+
+// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
+FRotator FHandsContextData::GetGrabRotation(const FVector RelativeRight, const FVector RelativeUp) const
+{
+	const FVector HandLocation = GetHandLocation();
+	const FVector HandNormal = GetHandNormal();
+
+	const float RelativeRightNormalDot = RelativeRight | HandNormal;
+	if (FMath::Abs(RelativeRightNormalDot) <= M_SAFE_WORLD_PERPENDICULAR_DOT)
+	{
+		UE_LOG(LogTemp, Display, TEXT("RELATIVE RIGHT AND HAND NORMAL ARE PERPENDICULAR (dot: %f), PROJECTING USING RELATIVE RIGHT."), RelativeRightNormalDot);
+
+		// Micro-optimization, we are manually doing FVector::VectorPlaneProject using the dot calculated above.
+		const FVector HandRelativeRight = RelativeRight - (HandNormal * RelativeRightNormalDot);
+		return FRotationMatrix::MakeFromXY(HandNormal, HandRelativeRight).Rotator();
+	}
+
+	// Relative Right vector is parallel to the normal, so we'll instead try to calculate using the world up, and if it fails, we'll use relativeup instead.
+	
+	FVector HandRelativeUp = -FVector::UpVector;
+	const float RelativeUpNormalDot = HandRelativeUp | HandNormal;
+	if (FMath::Abs(RelativeUpNormalDot) <= M_SAFE_WORLD_PERPENDICULAR_DOT)
+	{
+		// FVector::UpVector Dot HandNormal should be greater than zero to use, otherwise we project using RelativeUp instead.
+		UE_LOG(LogTemp, Display, TEXT("WORLD UP AND HAND NORMAL ARE PERPENDICULAR (dot: %f), PROJECTING USING WORLD UP."), RelativeUpNormalDot);
+
+		// Micro-optimization, we are manually doing FVector::VectorPlaneProject using the dot calculated above.
+		HandRelativeUp = (HandRelativeUp - (HandNormal * RelativeUpNormalDot)).GetSafeNormal();
+	}
+	else
+	{
+		UE_LOG(LogTemp, Display, TEXT("WORLD UP AND HAND NORMAL ARE PARALLEL (dot: %f), PROJECTING USING RELATIVE UP INSTEAD."), RelativeUpNormalDot);
+		HandRelativeUp = FVector::VectorPlaneProject(RelativeUp, HandNormal).GetSafeNormal();
+	}
+
+	
+	return FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
+
+	/** GrabRot relative to HandLocation */
+	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
+
+	/** HandLocation */
+	//DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.0f);
+
+	/** HandNormal pointing outwards from HandLocation */
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
+
+	/** Arrow pointing from HandLocation to MoveDir */
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.5f);
+
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
+
+	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
+	// End of Debugs
 }
 
 bool FHandsContextData::IsInteractClimbing() const
@@ -523,11 +580,8 @@ void APrototype1Character::FlyDown()
 	{
 		const FHandsContextData HandData = (LeftHandData.IsInteractClimbing()) ? LeftHandData : RightHandData;
 
-		const FVector HandLocation = HandData.GetHandLocation();
-		const FVector HandNormal = HandData.GetHandNormal();
 		// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
-		const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandNormal);
-		const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
+		const FRotator GrabRot = HandData.GetGrabRotation(GetCapsuleComponent()->GetRightVector(), -FirstPersonCameraComponent->GetUpVector());
 
 		// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 		const FVector MouseInput = GrabRot.RotateVector(FVector(0, 0, -1.0f));
@@ -690,12 +744,9 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	{
 		return;
 	}
-
-	const FVector HandLocation = HandData.GetHandLocation();
-	const FVector HandNormal = HandData.GetHandNormal();
+	
 	// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
-	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandNormal);
-	const FRotator GrabRot = FRotationMatrix::MakeFromXZ(HandNormal, HandRelativeUp).Rotator();
+	const FRotator GrabRot = HandData.GetGrabRotation(GetCapsuleComponent()->GetRightVector(), -FirstPersonCameraComponent->GetUpVector());
 
 	// MoveDir is negated from MouseInput, because Mouse movement is set to INVERTED. Might want to add a check here if I plan on adding mouse settings later.
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
@@ -709,24 +760,6 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	// otherwise we would be applying more force than designed in our CMC
 	///ClimberMovementComponent->HandMoveDir += MFMath::SafeMultiplyUnderUnitVector(MoveDir, MouseClimbingSensitivity);
 	ClimberMovementComponent->HandMoveDir += MoveDir * MouseClimbingSensitivity;
-
-	/** GrabRot relative to HandLocation */
-	//DrawDebugCoordinateSystem(GetWorld(), HandLocation, GrabRot, 10.0f, false, 0.15f, 0, 1.0f);
-
-	/** HandLocation */
-	//DrawDebugSphere(GetWorld(), HandLocation, 50.0f, 6, FLinearColor(1.0f, 0.39f, 0.87f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.0f);
-
-	/** HandNormal pointing outwards from HandLocation */
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + (HandNormal * 12.0f), 1.0f, FLinearColor(0.18f, 0.57f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
-
-	/** Arrow pointing from HandLocation to MoveDir */
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MoveDir * 2.f, 1.0f, FLinearColor(0.46f, 1.0f, 0.15f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 1.0f);
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + MouseInput * 7.5f, 1.0f, FLinearColor(0.15f, 0.46f, 1.0f, 1.0f).ToFColorSRGB(), false, 0.15f, 0, 0.5f);
-
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 1.0f);
-
-	//DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ArmVector, 1.0f, (ArmOverstretched) ? FColor::Magenta : FColor::Emerald, false, -1.0f, 0, 0.5f);
-	// End of Debugs
 }
 
 void APrototype1Character::MoveGrabbedObject(FHandsContextData& HandData)
@@ -1367,8 +1400,8 @@ FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData
 	}
 
 	// Flip RightHand only.
-	const FVector HandRelativeUp = FVector::VectorPlaneProject(-FirstPersonCameraComponent->GetUpVector(), HandData.GetHandNormal());
-	return HandData.GetHandRotation(HandData.HandIndex == 0, HandRelativeUp);
+	// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
+	return HandData.GetHandRotation(HandData.HandIndex == 0, GetCapsuleComponent()->GetRightVector(), -FirstPersonCameraComponent->GetUpVector());
 }
 
 FVector APrototype1Character::RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const

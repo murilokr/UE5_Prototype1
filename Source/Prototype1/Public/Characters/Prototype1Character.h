@@ -123,7 +123,9 @@ struct FHandsContextData
 
 	FVector GetHandNormal() const;
 
-	FRotator GetHandRotation(bool bShouldFlip, const FVector RelativeUp) const;
+	FRotator GetHandRotation(bool bShouldFlip, const FVector RelativeRight, const FVector RelativeUp) const;
+
+	FRotator GetGrabRotation(const FVector RelativeRight, const FVector RelativeUp) const;
 
 	// Per frame values
 	FHitResult CurrentFrameTracedHitResult = FHitResult(-1.0f);
