@@ -14,6 +14,13 @@ enum EInteractType
 	INT_MAXCOUNT = 4	UMETA(Hidden),
 };
 
+// Add a DataAsset for Surface Properties
+// Friction
+// Slippery
+// OnGrabEffect
+// OnReleaseEffect
+// UV_RT
+//
 
 UCLASS( ClassGroup=(Custom), meta=(BlueprintSpawnableComponent) )
 class PROTOTYPE1_API UInteractableActorComponent : public UActorComponent

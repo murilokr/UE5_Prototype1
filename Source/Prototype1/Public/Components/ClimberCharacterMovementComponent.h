@@ -33,6 +33,11 @@ struct FHandsRuntimeMovementData
 
 	UPROPERTY(Transient)
 	FVector LastHandSlipAccelerationInput = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, Transient)
+	float HandSlipMaxAcceleration = 0.0f;
+
+	void ResetHand();
 };
 
 UCLASS()
@@ -65,6 +70,8 @@ private:
 	virtual float GetMaxBrakingDeceleration() const override;
 
 	FVector ConsumeSlipHandInputVector(const FHandsContextData& HandData);
+
+	void HandleHandSurfaceProperties(const FHandsContextData& HandData);
 
 public:
 	bool IsClimbing() const;
@@ -106,9 +113,6 @@ public:
 	// Since Gravity is coyote'd. This is the maximum amount of gravity applied to the CMC.
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float GravityForce = 500.0f;
-
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
-	float HandSlipMaxAcceleration = 12.5f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "Character Movement: Climbing")
 	float HandsControlAcceleration = 150.f;

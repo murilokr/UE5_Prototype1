@@ -77,6 +77,13 @@ struct FHandsContextData
 	UPROPERTY(BlueprintReadOnly, EditAnywhere)
 	FName HandBoneName = "hand_r";
 
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	bool IsOverstretched = false;
+
+	// TODO: have a "IsExertingForce" detection for each hand (i.e: mouse input, hand higher than the other, in relaxed or overstretched state).
+	UPROPERTY(BlueprintReadOnly, EditAnywhere)
+	bool IsExertingForce = false;
+
 	// Location of the hand grab in local player space
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	FVector HandObjectLocalLocation;
@@ -114,6 +121,8 @@ struct FHandsContextData
 	FKSphylElem* HandCollisionPrimitive = nullptr;
 	FCollisionShape HandCollisionShape;
 
+	void ResetHandState();
+
 	bool IsInteracting() const { return InteractionType > 0 && InteractionType < 4; }
 	bool IsInteractClimbing() const;
 	bool IsInteractGrabbing() const;
@@ -126,6 +135,8 @@ struct FHandsContextData
 	FRotator GetHandRotation(bool bShouldFlip, const FVector RelativeRight, const FVector RelativeUp) const;
 
 	FRotator GetGrabRotation(const FVector RelativeRight, const FVector RelativeUp) const;
+
+	void StoreHit(const FHitResult& HitResult, const FVector& OverrideHitLocation = FVector::ZeroVector, const FVector& OverrideHitNormal = FVector::ZeroVector);
 
 	// Per frame values
 	FHitResult CurrentFrameTracedHitResult = FHitResult(-1.0f);
@@ -243,10 +254,12 @@ public:
 	const FHandsContextData& GetHandData(int HandIndex) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce);
-	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, bool& OutIsOverstretched, FVector& RootDeltaFix, FVector& ArmSpringForce);
+	FVector CalculateArmConstraint(int HandIndex, float DeltaSeconds, const FVector& BodyOffset, FVector& RootDeltaFix, FVector& ArmSpringForce);
+	FVector CalculateArmConstraint(FHandsContextData& HandData, float DeltaSeconds, const FVector& BodyOffset, FVector& RootDeltaFix, FVector& ArmSpringForce);
 
 	bool TryToSlipHand(FHandsContextData& HandData, const FVector& ArmVector, float ArmMaxRelaxedLength, float DeltaSeconds);
+	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
+	FVector MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta);
 
 	UFUNCTION(BlueprintPure)
 	FVector GetHandLocation(int HandIndex) const;
@@ -293,9 +306,6 @@ public:
 	UFUNCTION(BlueprintPure)
 	bool CanHandInteract(int HandIndex) const;
 	bool CanHandInteract(const FHandsContextData& HandData) const;
-
-	FVector ValidateHandSlipTarget(const FHandsContextData& HandData, const FVector& SlipTarget);
-	FVector MoveHandGrabLocation(FHandsContextData& HandData, const FVector& MoveDelta);
 
 	UFUNCTION(BlueprintCallable)
 	void ReleaseHand(int HandIndex);
@@ -391,6 +401,10 @@ public:
 	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float ClavicleShoulderLengthMultiplier = 0.5f;
+
+	// Max surface angle that is allowed to slip, anything above this will automatically cause the hand to release.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	float MaxSlipHandAngle = 35.0f;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
 	float LookBackTime = 0.75f;

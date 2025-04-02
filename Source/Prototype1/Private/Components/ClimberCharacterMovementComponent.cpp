@@ -3,6 +3,7 @@
 #include "GameFramework/PhysicsVolume.h"
 #include "Characters/Prototype1Character.h"
 #include "Kismet/KismetMathLibrary.h"
+#include <Components/InteractableActorComponent.h>
 
 namespace MovementClimbingUtils
 {
@@ -164,6 +165,9 @@ void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELe
 	{
 		return;
 	}
+
+	HandleHandSurfaceProperties(ClimberCharacterOwner->RightHandData);
+	HandleHandSurfaceProperties(ClimberCharacterOwner->LeftHandData);
 	
 	if (HelperSpringIntensityFalloffTimer > 0.0f)
 	{
@@ -178,6 +182,7 @@ void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELe
 		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
 		//GEngine->AddOnScreenDebugMessage(44, DeltaTime, FColor::Yellow, FString::Printf(TEXT("HelperSpring - Intensity: %f - Timer: %f - dThickness: %f"), HelperSpringIntensity, HelperSpringIntensityFalloffTimer, dThickness));
 	}
+#ifdef M_DEBUG_ENABLED
 	else // for debug
 	{
 		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
@@ -188,6 +193,7 @@ void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELe
 		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
 		//GEngine->AddOnScreenDebugMessage(44, 5.0f, FColor::Red, FString::Printf(TEXT("HelperSpringIntensity: %f"), HelperSpringIntensity));
 	}
+#endif
 }
 
 void UClimberCharacterMovementComponent::OnStartClimbing()
@@ -483,8 +489,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 
 	FVector RootDeltaFixHand = FVector::ZeroVector;
 	FVector ArmSpringForce = FVector::ZeroVector;
-	bool IsArmOutstretched;
-	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaTime, BodyOffset, IsArmOutstretched, RootDeltaFixHand, ArmSpringForce);
+	FVector ArmVector = ClimberCharacterOwner->CalculateArmConstraint(HandData, DeltaTime, BodyOffset, RootDeltaFixHand, ArmSpringForce);
 
 	FVector HandAcceleration = FVector::ZeroVector;
 	
@@ -537,7 +542,7 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	// HandSlip Calculation.
 	// 
 	// Calculate HandSlipAcceleration
-	TGuardValue<float> RestoreMaxAccelerationAfter(MaxAcceleration, HandSlipMaxAcceleration);
+	TGuardValue<float> RestoreMaxAccelerationAfter(MaxAcceleration, HandMovementData.HandSlipMaxAcceleration);
 	FVector HandSlipAcceleration = GetMaxAcceleration() * ConsumeSlipHandInputVector(HandData).GetClampedToMaxSize(1.0f);
 
 	if (!HandMovementData.HandSlipTarget.IsZero())
@@ -564,16 +569,22 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		HandMovementData.HandSlipVelocity = HandMovementData.HandSlipVelocity.GetClampedToMaxSize(NewMaxInputSlipSpeed);
 	}
 
-	// Now actually and physically move the hand!
-	FVector OldHandLocation = HandData.GetHandLocation();
-	const FVector HandDelta = HandMovementData.HandSlipVelocity * DeltaTime;
-	const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(HandData, HandDelta);
-	if (HandMovementData.HandSlipTarget.Equals(NewHandLocation))
+	if (!HandMovementData.HandSlipVelocity.IsNearlyZero())
 	{
-		HandMovementData.HandSlipTarget = FVector::ZeroVector;
+		// Now actually and physically move the hand!
+		FVector OldHandLocation = HandData.GetHandLocation();
+		const FVector HandDelta = HandMovementData.HandSlipVelocity * DeltaTime;
+		const FVector NewHandLocation = ClimberCharacterOwner->MoveHandGrabLocation(HandData, HandDelta);
+		if (HandMovementData.HandSlipTarget.Equals(NewHandLocation))
+		{
+			HandMovementData.HandSlipTarget = FVector::ZeroVector;
+		}
+
+		HandMovementData.HandSlipVelocity = (NewHandLocation - OldHandLocation) / DeltaTime;
 	}
 
-	HandMovementData.HandSlipVelocity = (NewHandLocation - OldHandLocation) / DeltaTime;	
+
+	// Check if hand is still grabbing?
 }
 
 FVector UClimberCharacterMovementComponent::GetHorizontalHandAcceleration(const FVector& InitialAcceleration, const FHandsContextData& HandData)
@@ -613,6 +624,8 @@ float UClimberCharacterMovementComponent::GetMaxBrakingDeceleration() const
 void UClimberCharacterMovementComponent::SetHandClimbing(const FHandsContextData& HandData)
 {
 	UpdateHelperSpring(HelperSpringIntensityIdleFalloffDuration);
+
+	HandleHandSurfaceProperties(HandData);
 	
 	FVector& PrevHandObjectLocation = (HandData.HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
 	FVector& PrevHandObjectVelocity = (HandData.HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
@@ -632,6 +645,8 @@ void UClimberCharacterMovementComponent::ReleaseHand(const FHandsContextData& Ha
 	PrevHandObjectLocation = FVector::ZeroVector;
 	PrevHandObjectVelocity = FVector::ZeroVector;
 
+	FHandsRuntimeMovementData& HandMovementData = (HandData.HandIndex == 0) ? RightHandRuntimeData : LeftHandRuntimeData;
+	HandMovementData.ResetHand();
 }
 
 void UClimberCharacterMovementComponent::UpdateHelperSpring(float SpringIntensityFalloffCustomDuration)
@@ -664,6 +679,36 @@ FVector UClimberCharacterMovementComponent::ConsumeSlipHandInputVector(const FHa
 	return HandMovementData.LastHandSlipAccelerationInput;
 }
 
+void UClimberCharacterMovementComponent::HandleHandSurfaceProperties(const FHandsContextData& HandData)
+{
+	if (!HandData.IsInteractClimbing() || !HandData.HitActor)
+	{
+		return;
+	}
+
+	const bool IsVelocityDownwards = (Velocity | FVector::DownVector) > 0.0f;
+	if (!HandData.IsExertingForce && !IsVelocityDownwards)
+	{
+		// should only slip if "falling" or exerting force.
+		return;
+	}
+
+	if (UInteractableActorComponent* InteractableActorComponent = UInteractableActorComponent::GetComponentFromActor(HandData.HitActor))
+	{
+		FHandsRuntimeMovementData& HandMovementData = (HandData.HandIndex == 0) ? RightHandRuntimeData : LeftHandRuntimeData;
+
+		// Is 1 when fully vertical, and less than when inclining.
+		const float InclineMultiplier = 1.0f - (HandData.GetHandNormal() | FVector::UpVector);
+
+		HandMovementData.HandSlipMaxAcceleration = InteractableActorComponent->SlipperyValue * InclineMultiplier;
+		if (HandMovementData.HandSlipMaxAcceleration > 0)
+		{
+			const FVector SlipDir = FVector::VectorPlaneProject(-FVector::UpVector, HandData.GetHandNormal()).GetSafeNormal();
+			AddHandSlipAccelerationInput(HandData, SlipDir);
+		}
+	}
+}
+
 void UClimberCharacterMovementComponent::AddHandSlipAccelerationInput(const FHandsContextData& HandData, const FVector& InputVector)
 {
 	FHandsRuntimeMovementData& HandMovementData = GetMutableHandMovementData(HandData.HandIndex);
@@ -693,4 +738,12 @@ void UClimberCharacterMovementComponent::SetHandSlipVelocity(const FHandsContext
 		// Add to the current HandSlipVelocity
 		HandMovementData.HandSlipVelocity += SlipVelocity;
 	}
+}
+
+void FHandsRuntimeMovementData::ResetHand()
+{
+	HandSlipVelocity = FVector::ZeroVector;
+	HandSlipTarget = FVector::ZeroVector;
+	HandSlipAccelerationInput = FVector::ZeroVector;
+	LastHandSlipAccelerationInput = FVector::ZeroVector;
 }
