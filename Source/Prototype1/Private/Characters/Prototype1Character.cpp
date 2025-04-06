@@ -24,6 +24,23 @@ DEFINE_LOG_CATEGORY(LogTemplateCharacter);
 
 #define M_SAFE_WORLD_PERPENDICULAR_DOT 0.2
 
+namespace MUtils
+{
+	template<typename TShapeElem>
+	bool GetPrimitiveRotation(FKShapeElem* Primitive, FQuat& OutRotation)
+	{
+		OutRotation = FQuat();
+
+		if (TShapeElem* ShapeElem = static_cast<TShapeElem*>(Primitive))
+		{
+			OutRotation = ShapeElem->Rotation.Quaternion();
+			return true;
+		}
+
+		return false;
+	}
+};
+
 //////////////////////////////////////////////////////////////////////////
 // MFMath
 
@@ -301,6 +318,22 @@ void FHandsContextData::StoreHit(const FHitResult& HitResult, const FVector& Ove
 	HandSurfaceLocalNormal = HitBoneWorldToLocalTransform.InverseTransformVector(GrabNormal);
 }
 
+FQuat FHandsContextData::GetCollisionPrimitiveRotation() const
+{
+	FQuat PrimitiveRotation = FQuat();
+	if (bool bValid = MUtils::GetPrimitiveRotation<FKSphylElem>(HandCollisionPrimitive, PrimitiveRotation))
+	{
+		return PrimitiveRotation;
+	}
+	
+	if (bool bValid = MUtils::GetPrimitiveRotation<FKBoxElem>(HandCollisionPrimitive, PrimitiveRotation))
+	{
+		return PrimitiveRotation;
+	}
+
+	return PrimitiveRotation;
+}
+
 void FHandsContextData::ResetHandState()
 {
 	InteractionType = EInteractType::INT_None;
@@ -342,19 +375,21 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
 	Mesh1P->SetOnlyOwnerSee(true);
-	Mesh1P->SetupAttachment(MeshPivot);
+	//Mesh1P->SetupAttachment(MeshPivot); // Default (Non Full Body)
+	Mesh1P->SetupAttachment(GetCapsuleComponent()); // Full Body Setup
 	Mesh1P->bCastDynamicShadow = false;
 	Mesh1P->CastShadow = false;
-	Mesh1P->SetRelativeLocation(FVector(10.f, 0.f, -180.82879f));
+	//Mesh1P->SetRelativeLocation(FVector(10.f, 0.f, -180.82879f)); // Default (Non Full Body)
 	//Mesh1P->SetRelativeRotation(FRotator(0.9f, -19.19f, 5.2f));
 	//Mesh1P->SetRelativeLocation(FVector(-30.f, 0.f, -150.f));
-	//Mesh1P->SetRelativeLocation(FVector(0.f, 0.f, -121.414395f));
+	Mesh1P->SetRelativeLocation(FVector(0.f, 0.f, -121.414395f)); // Use this if not attaching to MeshPivot. (Full Body)
 
 	// Create a CameraComponent
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	// If we are using a True FPS Pawn, we want to setup a attachment bone -- might be TEXT("head").
-	FirstPersonCameraComponent->SetupAttachment(Mesh1P);
+	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("head"));
 	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
+
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
 	FirstPersonCameraComponent->bUsePawnControlRotation = true;
@@ -480,12 +515,25 @@ void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandDa
 	int32 HandBodyIndex = Mesh1PPhysicsAsset->FindBodyIndex(HandData.HandBoneName);
 	check(Mesh1PPhysicsAsset->SkeletalBodySetups.IsValidIndex(HandBodyIndex));
 	FKAggregateGeom* AggGeom = &Mesh1PPhysicsAsset->SkeletalBodySetups[HandBodyIndex]->AggGeom;
+
+	// Check for Capsule Shape Element.
 	FKShapeElem* Elem = AggGeom->GetElement(EAggCollisionShape::Sphyl, 0);
 	if (FKSphylElem* SphylElem = static_cast<FKSphylElem*>(Elem))
 	{
 		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(SphylElem->Rotation.Quaternion());
 		HandData.HandCollisionPrimitive = SphylElem;
 		HandData.HandCollisionShape = FCollisionShape::MakeCapsule(SphylElem->Radius, (SphylElem->Length + SphylElem->Radius * 2) / 2.f);
+	}
+	else
+	{
+		// Check for Box Shape Element
+		Elem = AggGeom->GetElement(EAggCollisionShape::Box, 0);
+		if (FKBoxElem* BoxElem = static_cast<FKBoxElem*>(Elem))
+		{
+			const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(BoxElem->Rotation.Quaternion());
+			HandData.HandCollisionPrimitive = BoxElem;
+			HandData.HandCollisionShape = FCollisionShape::MakeBox(FVector(BoxElem->X, BoxElem->Y, BoxElem->Z));
+		}
 	}
 }
 
@@ -1447,7 +1495,7 @@ FVector APrototype1Character::GetSafeHandLocation(const FHandsContextData& HandD
 		constexpr float ExtraLengthMult = 1.2f;
 		const float MaxBoneLength = ((FinalHandLocation-LowerArmLocation).Length() + (LowerArmLocation-UpperArmLocation).Length()) * ExtraLengthMult; // This is just to trace a path.
 		
-		const FQuat HandRotation = Mesh1P->GetBoneTransform(LeftHandData.HandBoneName).TransformRotation(LeftHandData.HandCollisionPrimitive->Rotation.Quaternion());
+		const FQuat HandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(HandData.GetCollisionPrimitiveRotation());
 		
 		FCollisionQueryParams QueryParams;
 		QueryParams.AddIgnoredActor(this);

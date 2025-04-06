@@ -118,8 +118,10 @@ struct FHandsContextData
 	FQuat HandToWorldTransform;
 
 	// Actual hand hitbox.
-	FKSphylElem* HandCollisionPrimitive = nullptr;
+	FKShapeElem* HandCollisionPrimitive = nullptr;
 	FCollisionShape HandCollisionShape;
+
+	FQuat GetCollisionPrimitiveRotation() const;
 
 	void ResetHandState();
 
