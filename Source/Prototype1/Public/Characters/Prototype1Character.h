@@ -347,84 +347,69 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void StopCoyoteTime();
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing|Physical Arms")
 	FHandsContextData LeftHandData;
 
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Climbing|Physical Arms")
 	FHandsContextData RightHandData;
 
 	// Prevents overstretching. We let go if grabbed location is beyond this length.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float ArmsLengthUnits = 55.f;
 
 	// How much above ArmsLengthUnits are we going to allow when dragging given Min and Max angle.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="1", UIMax="2", ClampMin="1", ClampMax="2"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(UIMin="1", UIMax="2", ClampMin="1", ClampMax="2"))
 	float ArmStretchMultiplier = 1.2f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
 	float ArmMinRelaxedT = 0.7f;
 	
 	// How much along the arm length is considered to be in a relaxed state.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(UIMin="0", UIMax="1", ClampMin="0", ClampMax="1"))
 	float ArmRelaxedT = 0.8f;
 
 	// The minimum angle from shoulder to hand (2D) to start sampling ArmStretchMultiplier with ArmStretchMultiplierCurve to apply onto ArmsLengthUnits.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
 	float ArmStretchMultiplierMinAngle = 1.2f;
 
 	// The maximum angle from shoulder to hand (2D) to start sampling ArmStretchMultiplier with ArmStretchMultiplierCurve to apply onto ArmsLengthUnits.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta = (UIMin = "0", UIMax = "90", ClampMin = "0", ClampMax = "90"))
 	float ArmStretchMultiplierMaxAngle = 1.2f;
 
 	// The curve float that will sample between 0.1 (MinAngle-MaxAngle) to apply ArmStretchMultiplier onto ArmsLengthUnits.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	TObjectPtr<UCurveFloat> ArmStretchMultiplierCurve;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms", meta = (UIMin = "0", UIMax = "2", ClampMin = "0", ClampMax = "2"))
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta = (UIMin = "0", UIMax = "2", ClampMin = "0", ClampMax = "2"))
 	float MinStretchRatioToSlip = 0.87f;
 
 	// HandSafeZone is how much units towards HandNormal we will set as HandPosition, this is to give a safe space to place the hand, without clipping geometry.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float HandSafeZone = 10.0f;
 
 	// This is actually the Physical Length of the line segment. Add radius for both ends to compute total length (aka: height)
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float HandPhysicalLength = 9.635022f;
 
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float HandPhysicalHeight = 22.673f;
 
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float HandPhysicalRadius = 6.519027f;
 
 	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float ClavicleShoulderLengthMultiplier = 0.5f;
 
 	// Max surface angle that is allowed to slip, anything above this will automatically cause the hand to release.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float MaxSlipHandAngle = 35.0f;
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
-	float LookBackTime = 0.75f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
-	float FreeLookYawAngleLimit = 160.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
-	float FreeLookPitchAngleLimit = 40.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms - Trace")
-	float ArmConeTraceAngle = 45.0f;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms - Trace")
-	int ArmConeTraceSteps = 4;
-
 	// Elbow Lerping Properties
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	TArray<FElbowSetup> ElbowsSetups;
 
 	UPROPERTY(Transient, BlueprintReadOnly)
@@ -438,17 +423,38 @@ public:
 	float RightArmLerpTime;
 	// End of Elbow Lerping Properties
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FVector LeftHandIdlePositionLocal = FVector(30.f, -15.f, 155.f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FRotator LeftHandIdleRotationLocal = FRotator(72.366f, 82.496f, 176.927f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FVector RightHandIdlePositionLocal = FVector(30.f, 15.f, 155.f);
 
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing - Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FRotator RightHandIdleRotationLocal = FRotator(72.366f, -82.496f, 176.927f);
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
+	FRotator DefaultCameraRotation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
+	float LookBackTime = 0.75f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
+	float FreeLookYawAngleLimit = 160.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
+	float FreeLookPitchAngleLimit = 40.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Trace")
+	float ArmConeTraceAngle = 45.0f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Trace")
+	int ArmConeTraceSteps = 4;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Character")
+	bool IsUsingFullBody = true;
 
 protected:
 	virtual void BeginPlay();
