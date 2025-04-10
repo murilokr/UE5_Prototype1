@@ -396,22 +396,26 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 
 	PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
 
-	JointTarget_ElbowL = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("JointTarget_ElbowL"));
-	JointTarget_ElbowL->SetupAttachment(Mesh1P);
-	JointTarget_ElbowL->SetRelativeLocation(FVector(-300.f, -1000.f, 0.f));
-	JointTarget_ElbowL->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
-	JointTarget_ElbowR = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("JointTarget_ElbowR"));
-	JointTarget_ElbowR->SetupAttachment(Mesh1P);
-	JointTarget_ElbowR->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
-	JointTarget_ElbowR->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
-
-
 	// Setting up local clavicles. 
 	// TODO: Maybe in the future have a local directional vector from the camera to the clavicles, this way I'd avoid an extra GetComponentTransform().GetLocation()
-	LeftClavicle_Local = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LeftClavicle_Local"));
-	LeftClavicle_Local->SetupAttachment(FirstPersonCameraComponent);
-	RightClavicle_Local = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("RightClavicle_Local"));
-	RightClavicle_Local->SetupAttachment(FirstPersonCameraComponent);
+	LocalClavicle_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_L"));
+	LocalClavicle_L->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalClavicle_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_R"));
+	LocalClavicle_R->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+
+	LocalUpperArm_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_L"));
+	LocalUpperArm_L->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalUpperArm_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_R"));
+	LocalUpperArm_R->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+
+	ElbowJointTarget_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_L"));
+	ElbowJointTarget_L->SetupAttachment(GetRootComponent());//Mesh1P);
+	ElbowJointTarget_L->SetRelativeLocation(FVector(-300.f, -1000.f, 0.f));
+	ElbowJointTarget_L->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
+	ElbowJointTarget_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_R"));
+	ElbowJointTarget_R->SetupAttachment(GetRootComponent());//Mesh1P);
+	ElbowJointTarget_R->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
+	ElbowJointTarget_R->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
 }
 
 void APrototype1Character::BeginPlay()
@@ -436,7 +440,7 @@ void APrototype1Character::BeginPlay()
 
 	LeftHandData.LocalHandIdleLocation = LeftHandIdlePositionLocal;
 	LeftHandData.LocalHandIdleRotation = LeftHandIdleRotationLocal;
-
+	
 	RightHandData.LocalHandIdleLocation = RightHandIdlePositionLocal;
 	RightHandData.LocalHandIdleRotation = RightHandIdleRotationLocal;
 
@@ -455,15 +459,22 @@ void APrototype1Character::BeginPlay()
 	// Deprecated, but we will still calculate this. (This will actually be the half-length
 	HandPhysicalHeight = (HandPhysicalLength + (HandPhysicalRadius * 2)) / 2;
 
-	// Get Shoulder-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
-	const FVector RightClavicleBoneLocation = Mesh1P->GetBoneLocation(RightHandData.ClavicleBoneName);
-	const FVector ShoulderBoneLocation = Mesh1P->GetBoneLocation(RightHandData.UpperArmBoneName);
-	ClavicleShoulderLength = (ShoulderBoneLocation - RightClavicleBoneLocation).Length() * ClavicleShoulderLengthMultiplier;
 
-	// Setting up local clavicles.
+	const FVector RightClavicleBoneLocation = Mesh1P->GetBoneLocation(RightHandData.ClavicleBoneName);
+	const FVector RightUpperArmBoneLocation = Mesh1P->GetBoneLocation(RightHandData.UpperArmBoneName);
 	const FVector LeftClavicleBoneLocation = Mesh1P->GetBoneLocation(LeftHandData.ClavicleBoneName);
-	LeftClavicle_Local->SetWorldLocation(LeftClavicleBoneLocation);
-	RightClavicle_Local->SetWorldLocation(RightClavicleBoneLocation);
+	const FVector LeftUpperArmBoneLocation = Mesh1P->GetBoneLocation(LeftHandData.UpperArmBoneName);
+
+	// Get UpperArm-Clavicle Length (Taking reference from right arm, since left/right should be the same, under a certain error margin).
+	ClavicleShoulderLength = (RightUpperArmBoneLocation - RightClavicleBoneLocation).Length() * ClavicleShoulderLengthMultiplier;
+
+	// Setting up local clavicles.	
+	LocalClavicle_L->SetWorldLocation(LeftClavicleBoneLocation);
+	LocalClavicle_R->SetWorldLocation(RightClavicleBoneLocation);
+
+	// Setting up local upper arms
+	LocalUpperArm_L->SetWorldLocation(LeftUpperArmBoneLocation);
+	LocalUpperArm_R->SetWorldLocation(RightUpperArmBoneLocation);
 }
 
 //////////////////////////////////////////////////////////////////////////// Input
@@ -520,7 +531,6 @@ void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandDa
 	FKShapeElem* Elem = AggGeom->GetElement(EAggCollisionShape::Sphyl, 0);
 	if (FKSphylElem* SphylElem = static_cast<FKSphylElem*>(Elem))
 	{
-		const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(SphylElem->Rotation.Quaternion());
 		HandData.HandCollisionPrimitive = SphylElem;
 		HandData.HandCollisionShape = FCollisionShape::MakeCapsule(SphylElem->Radius, (SphylElem->Length + SphylElem->Radius * 2) / 2.f);
 	}
@@ -530,7 +540,6 @@ void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandDa
 		Elem = AggGeom->GetElement(EAggCollisionShape::Box, 0);
 		if (FKBoxElem* BoxElem = static_cast<FKBoxElem*>(Elem))
 		{
-			const FQuat ActualHandRotation = Mesh1P->GetBoneTransform(HandData.HandBoneName).TransformRotation(BoxElem->Rotation.Quaternion());
 			HandData.HandCollisionPrimitive = BoxElem;
 			HandData.HandCollisionShape = FCollisionShape::MakeBox(FVector(BoxElem->X, BoxElem->Y, BoxElem->Z));
 		}
@@ -866,7 +875,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	// Calculating VerticalExtension that goes from 1 to 2. This is to increase a bit on the trace distance if looking upwards.
 	const float TraceVerticalExtension = 1.0f; // FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);	
 
-	const FVector ClavicleBoneLocation = (HandData.HandIndex == 0) ? RightClavicle_Local->GetComponentLocation() : LeftClavicle_Local->GetComponentLocation();
+	const FVector ClavicleBoneLocation = (HandData.HandIndex == 0) ? LocalClavicle_R->GetComponentLocation() : LocalClavicle_L->GetComponentLocation();
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
 	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits);// + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
@@ -1173,13 +1182,13 @@ void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaS
 	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
 
 	if (TargetArmLerpTime > 0.f)
-	{
+	{		
 		FElbowSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
 		for (const FElbowSetup& ElbowSetup : ElbowsSetups)
 		{
 			if (ElbowSetup.SetupType == TargetArmSetup.SetupType)
 			{
-				UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? JointTarget_ElbowR : JointTarget_ElbowL;
+				UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? ElbowJointTarget_R : ElbowJointTarget_L;
 
 				TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
 				const float TimeNormalized = 1.f - (TargetArmLerpTime / ElbowSetup.LerpInDuration);
@@ -1239,12 +1248,13 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	const FVector HandNormal = HandData.GetHandNormal();
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
-	const FVector ShoulderOffset = Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) + BodyOffset;
+	const FVector UpperArmPhysBoneLocation = (HandData.HandIndex == 0) ? LocalUpperArm_R->GetComponentLocation() : LocalUpperArm_L->GetComponentLocation();
+	const FVector UpperArmOffset = UpperArmPhysBoneLocation + BodyOffset;//Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) + BodyOffset;
 
 	// Variable used for debugging only. (Add a pragma flag to dynamically remove this)
 	const FVector RootLocation = ClimberMovementComponent->UpdatedComponent->GetComponentLocation() + BodyOffset;
 
-	FVector OutArmVector = ShoulderOffset - HandLocation;
+	FVector OutArmVector = UpperArmOffset - HandLocation;
 	const FVector ArmVectorProjected = FVector::VectorPlaneProject(OutArmVector, HandNormal).GetSafeNormal();
 
 	// Check if we need to apply Stretch Multiplier
@@ -1273,12 +1283,12 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Blue, FString::Printf(TEXT("Applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
 		
 		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
-		const FVector SpringForce = HandLocation + RelaxedArmVector - ShoulderOffset;
+		const FVector SpringForce = HandLocation + RelaxedArmVector - UpperArmOffset;
 		const FVector SpringForceProjected = FVector::VectorPlaneProject(SpringForce, HandNormal);
 		ArmSpringForce += SpringForce;
 
 		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
-		DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + SpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), UpperArmOffset, UpperArmOffset + SpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
 	}
 	else
 	{
@@ -1291,7 +1301,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		GEngine->AddOnScreenDebugMessage(77, 0.1f, FColor::Red, TEXT("Applying arm limit snap."));
 		
 		// Stretched visualization.
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - ShoulderOffset, 1.0f, FColor::Red, false, 0.25f, 1, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - UpperArmOffset, 1.0f, FColor::Red, false, 0.25f, 1, 1.0f);
 		
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
 		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 5, 0.5f);
@@ -1300,18 +1310,18 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
 		
 		// IMPORTANT: ShoulderRootDir is unused. See IMPORTANT notes below.
-		//const FVector ShoulderRootDir = RootLocation - ShoulderOffset;
-		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
+		//const FVector ShoulderRootDir = RootLocation - UpperArmOffset;
+		//DrawDebugDirectionalArrow(GetWorld(), UpperArmOffset, RootLocation, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
 
 		// ArmDiff is where the shoulder SHOULD be to fix overstretching.
 		// IMPORTANT: ArmDiff already is RootDeltaFix. So we are commenting this out.
-		//const FVector ArmDiff = HandLocation + FixedArmVector - ShoulderOffset;
-		//DrawDebugDirectionalArrow(GetWorld(), ShoulderOffset, ShoulderOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
+		//const FVector ArmDiff = HandLocation + FixedArmVector - UpperArmOffset;
+		//DrawDebugDirectionalArrow(GetWorld(), UpperArmOffset, UpperArmOffset + ArmDiff, 1.0f, FColor::Purple, false, 0.25f, 0, 1.0f);
 
 		// RootDelta is where the root should be to fix the shoulder, so this is our final fix vector
 		// IMPORTANT: Commented code is how the equation was prior. But due to vector math I managed to reduce it to the following one.
-		//RootDeltaFix = (ShoulderOffset + ArmDiff + ShoulderRootDir) - RootLocation;
-		RootDeltaFix = HandLocation + FixedArmVector - ShoulderOffset;
+		//RootDeltaFix = (UpperArmOffset + ArmDiff + ShoulderRootDir) - RootLocation;
+		RootDeltaFix = HandLocation + FixedArmVector - UpperArmOffset;
 		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Red, false, 0.25f, 0, 1.0f);
 	}
 

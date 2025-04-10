@@ -176,21 +176,29 @@ public:
 	UPROPERTY(BlueprintReadOnly, VisibleAnywhere)
 	TObjectPtr<class UPhysicsHandleComponent> PhysicsHandle;
 
-	/** JointTarget for Left Elbow. This is used for IK Animations. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	UStaticMeshComponent* JointTarget_ElbowL;
-
-	/** JointTarget for Right Elbow. This is used for IK Animations. */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	UStaticMeshComponent* JointTarget_ElbowR;
-
 	/** Left Clavicle location in camera local space */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	UStaticMeshComponent* LeftClavicle_Local;
+	UStaticMeshComponent* LocalClavicle_L;
 
 	/** Right Clavicle location in camera local space */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	UStaticMeshComponent* RightClavicle_Local;
+	UStaticMeshComponent* LocalClavicle_R;
+
+	/** Left UpperArm location in camera local space */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* LocalUpperArm_L;
+
+	/** Right UpperArm location in camera local space */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* LocalUpperArm_R;
+
+	/** JointTarget for Left Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction) */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* ElbowJointTarget_L;
+
+	/** JointTarget for Right Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction)*/
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UStaticMeshComponent* ElbowJointTarget_R;
 
 	/** Jump Input Action */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category=Input, meta=(AllowPrivateAccess = "true"))
@@ -408,20 +416,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float MaxSlipHandAngle = 35.0f;
 
-	// Elbow Lerping Properties
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
+	// Elbow Lerping Properties. Deprecated (See ControlRig and Joint Target).
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(DeprecatedProperty))
 	TArray<FElbowSetup> ElbowsSetups;
 
-	UPROPERTY(Transient, BlueprintReadOnly)
+	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
 	FElbowSetup CurrentLeftArmSetup;
-	UPROPERTY(Transient, BlueprintReadOnly)
+	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
 	FElbowSetup CurrentRightArmSetup;
 
-	UPROPERTY(Transient, BlueprintReadOnly)
+	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
 	float LeftArmLerpTime;
-	UPROPERTY(Transient, BlueprintReadOnly)
+	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
 	float RightArmLerpTime;
-	// End of Elbow Lerping Properties
+	// End of Elbow Lerping Properties. Deprecated (See ControlRig and Joint Target).
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FVector LeftHandIdlePositionLocal = FVector(30.f, -15.f, 155.f);
@@ -514,6 +522,7 @@ protected:
 	void StoreGrabInputBuffer(const FHandsContextData& HandData);
 	void ProcessInputBuffers(float DeltaSeconds);
 
+	// Deprecated. See ControlRig and Joint Target.
 	void SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType);
 	void InterpHandsAndElbow(const int HandIndex, float DeltaSeconds);
 
