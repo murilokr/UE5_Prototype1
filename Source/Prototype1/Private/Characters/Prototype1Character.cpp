@@ -447,8 +447,8 @@ void APrototype1Character::BeginPlay()
 	SetupHandRuntimeContextData(RightHandData);
 	SetupHandRuntimeContextData(LeftHandData);
 
-	SetElbowSetup(0, ESETUP_Idle);
-	SetElbowSetup(1, ESETUP_Idle);
+	SetupArm(0, ASETUP_Idle);
+	SetupArm(1, ASETUP_Idle);
 
 	// Since we start on the ground, default movement mode will be Walking.
 	ClimberMovementComponent->SetMovementMode(EMovementMode::MOVE_Walking);
@@ -566,8 +566,8 @@ void APrototype1Character::Tick(float DeltaSeconds)
 		//	return;
 	}
 
-	InterpHandsAndElbow(0, DeltaSeconds);
-	InterpHandsAndElbow(1, DeltaSeconds);
+	InterpArms(0, DeltaSeconds);
+	InterpArms(1, DeltaSeconds);
 
 	// Need to convert all these timers into a class, or struct.
 	if (IsLookingBack())
@@ -1074,8 +1074,6 @@ void APrototype1Character::Interact(int HandIndex)
 	}
 
 	const FHitResult HitResult = HandData.CurrentFrameTracedHitResult;
-	
-
 	if (HitResult.Time == -1.0f || !HitResult.bBlockingHit)
 	{
 		// Nothing was hit in this frame. Let's add this input to the input buffer so we can check the same input over the next few frames.
@@ -1083,8 +1081,6 @@ void APrototype1Character::Interact(int HandIndex)
 		return;
 	}
 	
-	SetElbowSetup(HandIndex, ESETUP_Climbing);
-
 	HandData.StoreHit(HandData.CurrentFrameTracedHitResult);
 	const FVector GrabLocation = HitResult.ImpactPoint;//Location;
 
@@ -1123,6 +1119,8 @@ void APrototype1Character::Interact(int HandIndex)
 	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
 	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
 
+	SetupArm(HandIndex, ASETUP_Climbing);
+
 	if (HandData.IsInteractClimbing())
 	{
 		ClimberMovementComponent->SetHandClimbing(HandData);
@@ -1148,7 +1146,7 @@ void APrototype1Character::StopInteracting(int HandIndex)
 		PhysicsHandle->ReleaseComponent();
 	}
 
-	SetElbowSetup(HandIndex, ESETUP_Idle);
+	SetupArm(HandIndex, ASETUP_Idle);
 
 	if (HandData.IsInteractClimbing())
 	{
@@ -1160,40 +1158,40 @@ void APrototype1Character::StopInteracting(int HandIndex)
 	OnEndGrab(HandData, HandIndex);
 }
 
-void APrototype1Character::SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType)
+void APrototype1Character::SetupArm(const int HandIndex, const EArmSetupType& ArmSetupType)
 {
-	float& TargetElbowLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
-	FElbowSetup& TargetElbowSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
+	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
+	FArmSetup& TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
 
-	for (const FElbowSetup& ElbowSetup : ElbowsSetups)
+	for (const FArmSetup& ArmSetup : ArmsSetup)
 	{
-		if (ElbowSetup.SetupType == ElbowSetupType)
+		if (ArmSetup.SetupType == ArmSetupType)
 		{
 			// We can get the desired location from the setup.
-			TargetElbowSetup = ElbowSetup;
+			TargetArmSetup = ArmSetup;
 
-			TargetElbowLerpTime = ElbowSetup.LerpInDuration;
+			TargetArmLerpTime = ArmSetup.LerpInDuration;
 		}
 	}
 }
 
-void APrototype1Character::InterpHandsAndElbow(const int HandIndex, float DeltaSeconds)
+void APrototype1Character::InterpArms(const int HandIndex, float DeltaSeconds)
 {
 	float& TargetArmLerpTime = (HandIndex == 0) ? RightArmLerpTime : LeftArmLerpTime;
 
 	if (TargetArmLerpTime > 0.f)
 	{		
-		FElbowSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
-		for (const FElbowSetup& ElbowSetup : ElbowsSetups)
+		TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
+
+		FArmSetup TargetArmSetup = (HandIndex == 0) ? CurrentRightArmSetup : CurrentLeftArmSetup;
+		for (const FArmSetup& ArmSetup : ArmsSetup)
 		{
-			if (ElbowSetup.SetupType == TargetArmSetup.SetupType)
+			if (ArmSetup.SetupType == TargetArmSetup.SetupType)
 			{
+				const float TimeNormalized = 1.f - (TargetArmLerpTime / ArmSetup.LerpInDuration);
+
 				UStaticMeshComponent* ElbowComponent = (HandIndex == 0) ? ElbowJointTarget_R : ElbowJointTarget_L;
-
-				TargetArmLerpTime = FMath::Max(TargetArmLerpTime - DeltaSeconds, 0.f);
-				const float TimeNormalized = 1.f - (TargetArmLerpTime / ElbowSetup.LerpInDuration);
-
-				const FVector TargetElbowLocation = (HandIndex == 0) ? ElbowSetup.RightElbowRelativeLocation : ElbowSetup.LeftElbowRelativeLocation;
+				const FVector TargetElbowLocation = (HandIndex == 0) ? ArmSetup.RightElbowRelativeLocation : ArmSetup.LeftElbowRelativeLocation;
 				const FVector ElbowLocation = FMath::Lerp(ElbowComponent->GetRelativeLocation(), TargetElbowLocation, TimeNormalized);
 				ElbowComponent->SetRelativeLocation(ElbowLocation);
 			}

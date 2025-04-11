@@ -24,26 +24,32 @@ enum EInteractType : int;
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
 UENUM(BlueprintType)
-enum EElbowSetupType
+enum EArmSetupType
 {
-	ESETUP_Climbing		UMETA(DisplayName = "Elbow - Climbing Setup"),
-	ESETUP_Idle			UMETA(DisplayName = "Elbow - Idle Setup"),
-	ESETUP_Mantling		UMETA(DisplayName = "Elbow - Mantling Setup"), // Unused
-	ESETUP_MAX			UMETA(Hidden),
+	ASETUP_Climbing		UMETA(DisplayName = "Arm - Climbing Setup"),
+	ASETUP_Idle			UMETA(DisplayName = "Arm - Idle Setup"),
+	ASETUP_Mantling		UMETA(DisplayName = "Arm - Mantling Setup"), // Unused
+	ASETUP_MAX			UMETA(Hidden),
 };
 
 USTRUCT(BlueprintType)
-struct FElbowSetup
+struct FArmSetup
 {
 	GENERATED_BODY()
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	TEnumAsByte<EElbowSetupType> SetupType;
+	TEnumAsByte<EArmSetupType> SetupType;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector LeftArmJointDirection;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector RightArmJointDirection;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta = (DeprecatedProperty, DeprecationMessage = "Please use LeftArmJointDirection instead."))
 	FVector LeftElbowRelativeLocation;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, meta=(DeprecatedProperty, DeprecationMessage="Please use RightArmJointDirection instead."))
 	FVector RightElbowRelativeLocation;
 
 	// Lerp property
@@ -193,11 +199,11 @@ public:
 	UStaticMeshComponent* LocalUpperArm_R;
 
 	/** JointTarget for Left Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction) */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Please see LeftArmJointDirection"))
 	UStaticMeshComponent* ElbowJointTarget_L;
 
 	/** JointTarget for Right Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction)*/
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage="Please see RightArmJointDirection"))
 	UStaticMeshComponent* ElbowJointTarget_R;
 
 	/** Jump Input Action */
@@ -397,15 +403,15 @@ public:
 
 	// This is actually the Physical Length of the line segment. Add radius for both ends to compute total length (aka: height)
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta = (DeprecatedProperty))
 	float HandPhysicalLength = 9.635022f;
 
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta = (DeprecatedProperty))
 	float HandPhysicalHeight = 22.673f;
 
 	// Deprecated. See @HandsContextData.HandCollisionPrimitive
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(DeprecatedProperty))
 	float HandPhysicalRadius = 6.519027f;
 
 	// ClavicleShoulderLength is used to calculate if an arm is in range to grab something, this multiplier is to add or reduce a bit from that distance.
@@ -416,20 +422,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	float MaxSlipHandAngle = 35.0f;
 
-	// Elbow Lerping Properties. Deprecated (See ControlRig and Joint Target).
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms", meta=(DeprecatedProperty))
-	TArray<FElbowSetup> ElbowsSetups;
+	// Arm setup Properties
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
+	TArray<FArmSetup> ArmsSetup;
 
-	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
-	FElbowSetup CurrentLeftArmSetup;
-	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
-	FElbowSetup CurrentRightArmSetup;
+	UPROPERTY(Transient, BlueprintReadOnly)
+	FArmSetup CurrentLeftArmSetup;
+	UPROPERTY(Transient, BlueprintReadOnly)
+	FArmSetup CurrentRightArmSetup;
 
-	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
+	UPROPERTY(Transient, BlueprintReadOnly)
 	float LeftArmLerpTime;
-	UPROPERTY(Transient, BlueprintReadOnly, meta = (DeprecatedProperty))
+	UPROPERTY(Transient, BlueprintReadOnly)
 	float RightArmLerpTime;
-	// End of Elbow Lerping Properties. Deprecated (See ControlRig and Joint Target).
+	// End of Arm setup Properties.
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Physical Arms")
 	FVector LeftHandIdlePositionLocal = FVector(30.f, -15.f, 155.f);
@@ -522,9 +528,8 @@ protected:
 	void StoreGrabInputBuffer(const FHandsContextData& HandData);
 	void ProcessInputBuffers(float DeltaSeconds);
 
-	// Deprecated. See ControlRig and Joint Target.
-	void SetElbowSetup(const int HandIndex, const EElbowSetupType& ElbowSetupType);
-	void InterpHandsAndElbow(const int HandIndex, float DeltaSeconds);
+	void SetupArm(const int HandIndex, const EArmSetupType& ArmSetupType);
+	void InterpArms(const int HandIndex, float DeltaSeconds);
 
 	// APawn interface
 	virtual void SetupPlayerInputComponent(UInputComponent* InputComponent) override;
