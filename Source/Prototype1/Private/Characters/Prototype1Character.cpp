@@ -387,7 +387,7 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Create a CameraComponent
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	// If we are using a True FPS Pawn, we want to setup a attachment bone -- might be TEXT("head").
-	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("VB head_root"));
+	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("VB head_root")); //root_head
 	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
 
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
@@ -399,21 +399,21 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Setting up local clavicles. 
 	// TODO: Maybe in the future have a local directional vector from the camera to the clavicles, this way I'd avoid an extra GetComponentTransform().GetLocation()
 	LocalClavicle_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_L"));
-	LocalClavicle_L->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalClavicle_L->SetupAttachment(GetRootComponent());
 	LocalClavicle_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_R"));
-	LocalClavicle_R->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalClavicle_R->SetupAttachment(GetRootComponent());
 
 	LocalUpperArm_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_L"));
-	LocalUpperArm_L->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalUpperArm_L->SetupAttachment(GetRootComponent());
 	LocalUpperArm_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_R"));
-	LocalUpperArm_R->SetupAttachment(GetRootComponent());//FirstPersonCameraComponent);
+	LocalUpperArm_R->SetupAttachment(GetRootComponent());
 
 	ElbowJointTarget_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_L"));
-	ElbowJointTarget_L->SetupAttachment(GetRootComponent());//Mesh1P);
+	ElbowJointTarget_L->SetupAttachment(GetRootComponent());
 	ElbowJointTarget_L->SetRelativeLocation(FVector(-300.f, -1000.f, 0.f));
 	ElbowJointTarget_L->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
 	ElbowJointTarget_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_R"));
-	ElbowJointTarget_R->SetupAttachment(GetRootComponent());//Mesh1P);
+	ElbowJointTarget_R->SetupAttachment(GetRootComponent());
 	ElbowJointTarget_R->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
 	ElbowJointTarget_R->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
 }
