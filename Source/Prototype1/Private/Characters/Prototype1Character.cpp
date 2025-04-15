@@ -747,7 +747,7 @@ void APrototype1Character::ResetLook()
 
 	bUseControllerRotationYaw = true;
 
-	FirstPersonCameraComponent->SetRelativeRotation(DefaultCameraRotation);
+	//FirstPersonCameraComponent->SetRelativeRotation(DefaultCameraRotation);
 
 	// If we are using a True FPS Pawn, we "almost" always want this to be true.
 	//if (!IsUsingFullBody)

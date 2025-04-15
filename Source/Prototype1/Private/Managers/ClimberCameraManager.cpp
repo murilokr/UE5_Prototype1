@@ -97,7 +97,7 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 						OwningController->SetControlRotation(NewControlRotation);
 
 						const FQuat FPRelativeRotation = FQuat::Slerp(ClimberCharacter->FirstPersonCameraComponent->GetRelativeRotation().Quaternion(), FQuat::Identity, Blend);
-						ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
+						//ClimberCharacter->FirstPersonCameraComponent->SetRelativeRotation(FPRelativeRotation);
 					}
 				}
 

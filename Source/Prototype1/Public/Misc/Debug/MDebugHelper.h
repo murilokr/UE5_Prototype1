@@ -18,4 +18,5 @@ public:
 	static TAutoConsoleVariable<int32> CVarDrawHandTraceDebug;
 	static bool ShouldDrawTraceDebug();
 
+	static void PausePIE();
 };

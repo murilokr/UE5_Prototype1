@@ -1,5 +1,9 @@
 #include "Misc/Debug/MDebugHelper.h"
 
+#if WITH_EDITOR
+#include "UnrealEd.h"
+#endif
+
 TAutoConsoleVariable<int32> MDebugHelper::CVarDrawHandTraceDebug(
     TEXT("r.Debug.DrawHandTraceDebug"),
     0,
@@ -13,5 +17,12 @@ bool MDebugHelper::ShouldDrawTraceDebug()
     return CVarDrawHandTraceDebug.GetValueOnGameThread() == 1;
 #elif
     return false;
+#endif
+}
+
+void MDebugHelper::PausePIE()
+{
+#if WITH_EDITOR
+    GUnrealEd->PlayWorld->bDebugPauseExecution = true;
 #endif
 }
