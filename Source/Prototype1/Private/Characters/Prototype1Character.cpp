@@ -371,6 +371,7 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	MeshPivot->SetupAttachment(GetCapsuleComponent());
 	MeshPivot->SetRelativeLocation(FVector(-10.f, 0.f, 59.414395f));
 	MeshPivot->SetRelativeScale3D(FVector(1.f, 1.f, 1.f));
+	MeshPivot->SetComponentTickEnabled(false);
 
 	// Create a mesh component that will be used when being viewed from a '1st person' view (when controlling this pawn)
 	Mesh1P = CreateDefaultSubobject<USkeletalMeshComponent>(TEXT("CharacterMesh1P"));
@@ -400,22 +401,28 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// TODO: Maybe in the future have a local directional vector from the camera to the clavicles, this way I'd avoid an extra GetComponentTransform().GetLocation()
 	LocalClavicle_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_L"));
 	LocalClavicle_L->SetupAttachment(GetRootComponent());
+	LocalClavicle_L->SetComponentTickEnabled(false);
 	LocalClavicle_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_R"));
 	LocalClavicle_R->SetupAttachment(GetRootComponent());
+	LocalClavicle_R->SetComponentTickEnabled(false);
 
 	LocalUpperArm_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_L"));
 	LocalUpperArm_L->SetupAttachment(GetRootComponent());
+	LocalUpperArm_L->SetComponentTickEnabled(false);
 	LocalUpperArm_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_R"));
 	LocalUpperArm_R->SetupAttachment(GetRootComponent());
+	LocalUpperArm_R->SetComponentTickEnabled(false);
 
 	ElbowJointTarget_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_L"));
 	ElbowJointTarget_L->SetupAttachment(GetRootComponent());
 	ElbowJointTarget_L->SetRelativeLocation(FVector(-300.f, -1000.f, 0.f));
 	ElbowJointTarget_L->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
+	ElbowJointTarget_L->SetComponentTickEnabled(false);
 	ElbowJointTarget_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("ElbowJointTarget_R"));
 	ElbowJointTarget_R->SetupAttachment(GetRootComponent());
 	ElbowJointTarget_R->SetRelativeLocation(FVector(-300.f, 1000.f, 0.f));
 	ElbowJointTarget_R->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.1f));
+	ElbowJointTarget_R->SetComponentTickEnabled(false);
 }
 
 void APrototype1Character::BeginPlay()
