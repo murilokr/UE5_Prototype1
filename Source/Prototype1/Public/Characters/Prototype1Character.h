@@ -183,20 +183,28 @@ public:
 	TObjectPtr<class UPhysicsHandleComponent> PhysicsHandle;
 
 	/** Left Clavicle location in camera local space */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using LeftClavicleDirection"))
 	UStaticMeshComponent* LocalClavicle_L;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	FVector LeftClavicleDirection;
 
 	/** Right Clavicle location in camera local space */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using RightClavicleDirection"))
 	UStaticMeshComponent* LocalClavicle_R;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	FVector RightClavicleDirection;
 
 	/** Left UpperArm location in camera local space */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using LeftUpperArmDirection"))
 	UStaticMeshComponent* LocalUpperArm_L;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	FVector LeftUpperArmDirection;
 
 	/** Right UpperArm location in camera local space */
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using RightUpperArmDirection"))
 	UStaticMeshComponent* LocalUpperArm_R;
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
+	FVector RightUpperArmDirection;
 
 	/** JointTarget for Left Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Please see LeftArmJointDirection"))
@@ -461,6 +469,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
 	float FreeLookPitchAngleLimit = 40.0f;
 
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Camera")
+	float FreeLookExtensionYawLimit = 90.0f;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Climbing|Trace")
 	float ArmConeTraceAngle = 45.0f;
 
@@ -536,6 +547,10 @@ protected:
 	// End of APawn interface
 
 	void SetupHandRuntimeContextData(FHandsContextData& HandData) const;
+
+	UFUNCTION(BlueprintPure)
+	FVector GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection, FRotator& OutYawLockedRotation) const;
+	FVector GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool IsFreeLooking;

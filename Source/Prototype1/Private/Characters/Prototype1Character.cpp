@@ -367,6 +367,7 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Set size for collision capsule
 	GetCapsuleComponent()->InitCapsuleSize(40.0f, 96.0f);
 
+	// MeshPivot is not being used anymore.
 	MeshPivot = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("MeshPivot"));
 	MeshPivot->SetupAttachment(GetCapsuleComponent());
 	MeshPivot->SetRelativeLocation(FVector(-10.f, 0.f, 59.414395f));
@@ -467,6 +468,7 @@ void APrototype1Character::BeginPlay()
 	HandPhysicalHeight = (HandPhysicalLength + (HandPhysicalRadius * 2)) / 2;
 
 
+	const FVector CameraLocation = FirstPersonCameraComponent->GetComponentLocation();
 	const FVector RightClavicleBoneLocation = Mesh1P->GetBoneLocation(RightHandData.ClavicleBoneName);
 	const FVector RightUpperArmBoneLocation = Mesh1P->GetBoneLocation(RightHandData.UpperArmBoneName);
 	const FVector LeftClavicleBoneLocation = Mesh1P->GetBoneLocation(LeftHandData.ClavicleBoneName);
@@ -476,12 +478,21 @@ void APrototype1Character::BeginPlay()
 	ClavicleShoulderLength = (RightUpperArmBoneLocation - RightClavicleBoneLocation).Length() * ClavicleShoulderLengthMultiplier;
 
 	// Setting up local clavicles.	
+	LeftClavicleDirection = LeftClavicleBoneLocation - CameraLocation;
+	RightClavicleDirection = RightClavicleBoneLocation - CameraLocation;
+	// DEPRECATED
 	LocalClavicle_L->SetWorldLocation(LeftClavicleBoneLocation);
 	LocalClavicle_R->SetWorldLocation(RightClavicleBoneLocation);
+	// DEPRECATED
+
 
 	// Setting up local upper arms
+	LeftUpperArmDirection = LeftUpperArmBoneLocation - CameraLocation;
+	RightUpperArmDirection = RightUpperArmBoneLocation - CameraLocation;
+	// DEPRECATED
 	LocalUpperArm_L->SetWorldLocation(LeftUpperArmBoneLocation);
 	LocalUpperArm_R->SetWorldLocation(RightUpperArmBoneLocation);
+	// DEPRECATED
 }
 
 //////////////////////////////////////////////////////////////////////////// Input
@@ -551,6 +562,50 @@ void APrototype1Character::SetupHandRuntimeContextData(FHandsContextData& HandDa
 			HandData.HandCollisionShape = FCollisionShape::MakeBox(FVector(BoxElem->X, BoxElem->Y, BoxElem->Z));
 		}
 	}
+}
+
+FVector APrototype1Character::GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection) const
+{
+	FRotator OutYawLockedRotation;
+	return GetLocationFromCameraRelativeDirection(CameraRelativeDirection, OutYawLockedRotation);
+}
+
+FVector APrototype1Character::GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection, FRotator& OutYawLockedRotation) const
+{
+	// Mesh Body Rotation 
+	// Mesh1P->GetComponentRotation() + FRotator(0.0f, 90.0f, 0.0f);
+	FRotator BodyRotation = GetActorRotation(); 
+	OutYawLockedRotation = FirstPersonCameraComponent->GetComponentRotation();
+	const FVector CameraLocation = FirstPersonCameraComponent->GetComponentLocation();
+	DrawDebugDirectionalArrow(GetWorld(), CameraLocation, CameraLocation + BodyRotation.RotateVector(CameraRelativeDirection), 1.0f, FColor::Red, false, 0.02f, 0, 0);
+	DrawDebugPoint(GetWorld(), CameraLocation + BodyRotation.RotateVector(CameraRelativeDirection), 6.0f, FColor::Red, false, 0.02f, 0);
+
+	//UE_LOG(LogTemp, Display, TEXT("RotationDelta Yaw: %f - Camera Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw);
+	//if (IsFreeLooking)
+	{
+		FRotator RotationDelta = UKismetMathLibrary::NormalizedDeltaRotator(BodyRotation, OutYawLockedRotation);
+		if (RotationDelta.Yaw > FreeLookExtensionYawLimit)
+		{
+			const float YawDiff = RotationDelta.Yaw - FreeLookExtensionYawLimit;
+			UE_LOG(LogTemp, Display, TEXT("(1) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, OutYawLockedRotation.Yaw + YawDiff);
+			OutYawLockedRotation = FRotator(OutYawLockedRotation.Pitch, OutYawLockedRotation.Yaw + YawDiff, OutYawLockedRotation.Roll);
+		}
+		if (RotationDelta.Yaw < -FreeLookExtensionYawLimit)
+		{
+			const float YawDiff = FreeLookExtensionYawLimit - RotationDelta.Yaw;
+			UE_LOG(LogTemp, Display, TEXT("(2) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, YawDiff - OutYawLockedRotation.Yaw);
+			OutYawLockedRotation = FRotator(OutYawLockedRotation.Pitch, YawDiff - OutYawLockedRotation.Yaw, OutYawLockedRotation.Roll);
+		}
+	}
+
+	const FVector LocationRelativeToCamera = CameraLocation + OutYawLockedRotation.RotateVector(CameraRelativeDirection);
+	DrawDebugDirectionalArrow(GetWorld(), CameraLocation, LocationRelativeToCamera, 1.0f, FColor::Green, false, 0.02f, 0, 0);
+	DrawDebugPoint(GetWorld(), LocationRelativeToCamera, 15.0f, FColor::Green, false, 0.02f, 0);
+
+	// World debug
+	DrawDebugDirectionalArrow(GetWorld(), CameraLocation, CameraLocation + OutYawLockedRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Cyan, false, 0.02f, 0, 0);
+
+	return LocationRelativeToCamera;
 }
 
 void APrototype1Character::Tick(float DeltaSeconds)
@@ -729,6 +784,7 @@ void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 	bUseControllerRotationYaw = false;
 
 	// If we are using a True FPS Pawn, we "almost" always want this to be true.
+	// Scratch that, "head" rotation when free looking is done in the AnimGraph (might not be the best way to do it....)
 	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 }
 
@@ -882,7 +938,8 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	// Calculating VerticalExtension that goes from 1 to 2. This is to increase a bit on the trace distance if looking upwards.
 	const float TraceVerticalExtension = 1.0f; // FMath::Max(1 + (FVector::UpVector | FirstPersonCameraComponent->GetForwardVector()), 1.f);	
 
-	const FVector ClavicleBoneLocation = (HandData.HandIndex == 0) ? LocalClavicle_R->GetComponentLocation() : LocalClavicle_L->GetComponentLocation();
+	//const FVector ClavicleBoneLocation = (HandData.HandIndex == 0) ? LocalClavicle_R->GetComponentLocation() : LocalClavicle_L->GetComponentLocation();
+	const FVector ClavicleBoneLocation = (HandData.HandIndex == 0) ? GetLocationFromCameraRelativeDirection(RightClavicleDirection) : GetLocationFromCameraRelativeDirection(LeftClavicleDirection);
 	const FVector TraceStart = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector();
 	const FVector TraceEnd = ClavicleBoneLocation + FirstPersonCameraComponent->GetForwardVector() * TraceVerticalExtension * (ArmsLengthUnits);// + ClavicleShoulderLength);
 	const FVector TraceDir = TraceEnd - TraceStart;
@@ -958,7 +1015,8 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 	}
 
 	const FVector SweepDirProjected = FVector::VectorPlaneProject(SweepDir, SweepPlaneNormal);
-	SweepTraceStartFixed = SweepDirProjected + SweepTraceEndFixed + SweepPlaneNormal * HandData.HandCollisionShape.GetCapsuleRadius() * 2.f; // + Some offset in the normal direction.
+	const float HandCollisionExtent = HandData.HandCollisionShape.GetExtent().GetMax() * 2.f; // HandData.HandCollisionShape.GetCapsuleRadius() * 2.f
+	SweepTraceStartFixed = SweepDirProjected + SweepTraceEndFixed + SweepPlaneNormal * HandCollisionExtent; // + Some offset in the normal direction.
 
 	const bool ShouldMirrorSweepStart = (SweepDir | SweepPlaneNormal) < 0.f;
 	if (ShouldMirrorSweepStart)
@@ -1255,6 +1313,7 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 
 	const FVector UpperArmPhysBoneLocation = (HandData.HandIndex == 0) ? LocalUpperArm_R->GetComponentLocation() : LocalUpperArm_L->GetComponentLocation();
+	//const FVector UpperArmPhysBoneLocation = (HandData.HandIndex == 0) ? GetLocationFromCameraRelativeDirection(RightUpperArmDirection) : GetLocationFromCameraRelativeDirection(LeftUpperArmDirection);
 	const FVector UpperArmOffset = UpperArmPhysBoneLocation + BodyOffset;//Mesh1P->GetBoneLocation(HandData.UpperArmBoneName) + BodyOffset;
 
 	// Variable used for debugging only. (Add a pragma flag to dynamically remove this)
