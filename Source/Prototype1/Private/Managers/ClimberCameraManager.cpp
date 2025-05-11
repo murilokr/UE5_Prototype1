@@ -101,15 +101,15 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 					}
 				}
 
-				// Deal with rotating the MeshPivot
+				// Deal with rotating the Camera
 				// TODO: Have the body rotate towards first hand normal
 				if (!ClimberCharacter->FirstPersonCameraComponent->bUsePawnControlRotation && OwningController->IsLocalPlayerController())
 				{
 					const FRotator PawnViewRotation = ClimberCharacter->GetViewRotation();
-					UStaticMeshComponent* MeshPivot = ClimberCharacter->MeshPivot;
-					if (!PawnViewRotation.Equals(MeshPivot->GetComponentRotation()))
+					UCameraComponent* FPSCamera = ClimberCharacter->FirstPersonCameraComponent;
+					if (!PawnViewRotation.Equals(FPSCamera->GetComponentRotation()))
 					{
-						MeshPivot->SetWorldRotation(PawnViewRotation);
+						FPSCamera->SetWorldRotation(PawnViewRotation);
 					}
 				}
 			}

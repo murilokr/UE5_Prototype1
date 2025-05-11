@@ -389,22 +389,23 @@ APrototype1Character::APrototype1Character(const FObjectInitializer& ObjectIniti
 	// Create a CameraComponent
 	FirstPersonCameraComponent = CreateDefaultSubobject<UCameraComponent>(TEXT("FirstPersonCamera"));
 	// If we are using a True FPS Pawn, we want to setup a attachment bone -- might be TEXT("head").
-	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("VB head_root")); //root_head
-	FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
+	FirstPersonCameraComponent->SetupAttachment(Mesh1P, TEXT("VB root_head")); //original: VB head_root //trying to do stable camera: VB root_head
+	FirstPersonCameraComponent->SetRelativeLocation(FVector(0.f, 0.f, 164.531497)); // VB head_root values
 
+	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 180.82879f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector(-10.f, 0.f, 60.f)); // Position the camera
 	//FirstPersonCameraComponent->SetRelativeLocation(FVector((40.881380f, 0.f, 60.f)); // my overriden values.
-	FirstPersonCameraComponent->bUsePawnControlRotation = false;
+	FirstPersonCameraComponent->bUsePawnControlRotation = IsUsingFullBody;
 
 	PhysicsHandle = CreateDefaultSubobject<UPhysicsHandleComponent>(TEXT("PhysicsHandle"));
 
 	// Setting up local clavicles. 
 	// TODO: Maybe in the future have a local directional vector from the camera to the clavicles, this way I'd avoid an extra GetComponentTransform().GetLocation()
 	LocalClavicle_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_L"));
-	LocalClavicle_L->SetupAttachment(GetRootComponent());
+	LocalClavicle_L->SetupAttachment(GetRootComponent()); //FirstPersonCameraComponent
 	LocalClavicle_L->SetComponentTickEnabled(false);
 	LocalClavicle_R = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalClavicle_R"));
-	LocalClavicle_R->SetupAttachment(GetRootComponent());
+	LocalClavicle_R->SetupAttachment(GetRootComponent()); //FirstPersonCameraComponent
 	LocalClavicle_R->SetComponentTickEnabled(false);
 
 	LocalUpperArm_L = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("LocalUpperArm_L"));
@@ -813,10 +814,7 @@ void APrototype1Character::ResetLook()
 	//FirstPersonCameraComponent->SetRelativeRotation(DefaultCameraRotation);
 
 	// If we are using a True FPS Pawn, we "almost" always want this to be true.
-	//if (!IsUsingFullBody)
-	{
-		FirstPersonCameraComponent->bUsePawnControlRotation = false;
-	}
+	FirstPersonCameraComponent->bUsePawnControlRotation = IsUsingFullBody;
 
 	IsFreeLooking = false;
 }
