@@ -186,25 +186,25 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using LeftClavicleDirection"))
 	UStaticMeshComponent* LocalClavicle_L;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	FVector LeftClavicleDirection;
+	FVector LeftClavicleRelativeLocation;
 
 	/** Right Clavicle location in camera local space */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using RightClavicleDirection"))
 	UStaticMeshComponent* LocalClavicle_R;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	FVector RightClavicleDirection;
+	FVector RightClavicleRelativeLocation;
 
 	/** Left UpperArm location in camera local space */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using LeftUpperArmDirection"))
 	UStaticMeshComponent* LocalUpperArm_L;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	FVector LeftUpperArmDirection;
+	FVector LeftUpperArmRelativeLocation;
 
 	/** Right UpperArm location in camera local space */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Now using RightUpperArmDirection"))
 	UStaticMeshComponent* LocalUpperArm_R;
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true"))
-	FVector RightUpperArmDirection;
+	FVector RightUpperArmRelativeLocation;
 
 	/** JointTarget for Left Elbow. This is used for IK Animations. (Actually deprecated in Full Body, since Elbow|Joint is directly referenced in Control Rig as a direction) */
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = Mesh, meta = (AllowPrivateAccess = "true", DeprecatedProperty, DeprecationMessage = "Please see LeftArmJointDirection"))
@@ -549,8 +549,8 @@ protected:
 	void SetupHandRuntimeContextData(FHandsContextData& HandData) const;
 
 	UFUNCTION(BlueprintPure)
-	FVector GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection, FRotator& OutYawLockedRotation) const;
-	FVector GetLocationFromCameraRelativeDirection(const FVector& CameraRelativeDirection) const;
+	FVector RotateActorRelativeLocationFromCamera(const FVector& ActorRelativeLocation, FRotator& OutYawLockedRotation) const;
+	FVector RotateActorRelativeLocationFromCamera(const FVector& ActorRelativeLocation) const;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite)
 	bool IsFreeLooking;

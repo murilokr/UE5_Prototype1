@@ -14,7 +14,7 @@ enum EInteractType
 	INT_MAXCOUNT = 4	UMETA(Hidden),
 };
 
-// Add a DataAsset for Surface Properties
+// TODO: Add a DataAsset for Surface Properties
 // Friction
 // Slippery
 // OnGrabEffect
