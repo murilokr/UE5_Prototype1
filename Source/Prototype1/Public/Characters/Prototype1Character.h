@@ -338,7 +338,7 @@ public:
 	/** End of Hand Utility Functions */
 
 	/** Free Look Functions */
-	void ResetLook();
+	void ResetLook(FRotator NewControlRotation = FRotator());
 
 	// Used to indicate if we are lerping the camera back to its original rotation.
 	UFUNCTION(BlueprintPure)

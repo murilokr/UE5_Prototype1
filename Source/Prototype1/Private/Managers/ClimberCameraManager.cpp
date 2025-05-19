@@ -86,7 +86,14 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 				{
 					const float Blend = ClimberCharacter->GetLookBackBlend();
 
-					FRotator NewControlRotation = FMath::Lerp(OwningController->GetControlRotation(), ClimberCharacter->GetFreeLookPreviousControlRotation(), Blend);
+					// Get TargetControlRotation.
+					FRotator TargetControlRotation = ClimberCharacter->GetFreeLookPreviousControlRotation(); // TODO: Needs to take into account if player was free-looking and climbing, but now isn't, previous control rotation wouldn't be the exact rotation anymore. (See ResetLook parameter)
+					if (ClimberCharacter->IsClimbing())
+					{
+						TargetControlRotation = ClimberCharacter->Mesh1P->GetComponentRotation() + FRotator(0.0f, 90.0f, 0.0f);
+					}
+
+					FRotator NewControlRotation = FMath::Lerp(OwningController->GetControlRotation(), TargetControlRotation, Blend);
 					if (NewControlRotation.Equals(OwningController->GetControlRotation(), 1e-3f))
 					{
 						UE_LOG(LogTemp, Display, TEXT("NewControlRotation is equals to ControlRotation. EARLY OUT!"));

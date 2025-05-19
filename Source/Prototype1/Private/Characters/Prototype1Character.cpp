@@ -595,6 +595,11 @@ FVector APrototype1Character::RotateActorRelativeLocationFromCamera(const FVecto
 			UE_LOG(LogTemp, Display, TEXT("(2) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, YawDiff - OutYawLockedRotation.Yaw);
 			OutYawLockedRotation = FRotator(OutYawLockedRotation.Pitch, YawDiff - OutYawLockedRotation.Yaw, OutYawLockedRotation.Roll);
 		}
+
+		// Lock Pitch and Roll
+		const FVector FixedUp = GetActorUpVector();
+		const FVector FixedRight = OutYawLockedRotation.RotateVector(FVector::RightVector);
+		OutYawLockedRotation = FRotationMatrix::MakeFromZY(FixedUp, FixedRight).Rotator();
 	}
 	
 	const FVector LocationRelativeToCamera = ActorLocation + OutYawLockedRotation.RotateVector(ActorRelativeLocation);
@@ -781,9 +786,8 @@ void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 	IsFreeLooking = true;
 	FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
+	//DefaultCameraRotation = FirstPersonCameraComponent->GetRelativeRotation();
 
-	// If we are using a True FPS Pawn, we "almost" always want this to be true.
-	// Scratch that, "head" rotation when free looking is done in the AnimGraph (might not be the best way to do it....)
 	FirstPersonCameraComponent->bUsePawnControlRotation = false;
 }
 
@@ -797,24 +801,39 @@ void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 	LookBackTimer = LookBackTime;
 }
 
-void APrototype1Character::ResetLook()
+// Maybe pass FreeLookControlRotation as parameter, so that we can call ActorRotation in some use cases
+void APrototype1Character::ResetLook(FRotator NewControlRotation)
 {
 	LookBackTimer = 0.f;
+	IsFreeLooking = false;
 
-	// Reset camera to ControlRotation.
-	if (AController* MyController = GetController())
+	const bool bIsClimbing = IsClimbing();
+
+	if (NewControlRotation.IsZero())
 	{
-		MyController->SetControlRotation(FreeLookControlRotation);
+		NewControlRotation = FreeLookControlRotation;
 	}
 
-	bUseControllerRotationYaw = true;
+	// Reset pawn rotation to ControlRotation.
+	if (AController* MyController = GetController())
+	{
+		FRotator TargetControlRotation = NewControlRotation;
+		if (bIsClimbing)
+		{
+			TargetControlRotation = Mesh1P->GetComponentRotation() + FRotator(0.0f, 90.0f, 0.0f);
+		}
 
-	//FirstPersonCameraComponent->SetRelativeRotation(DefaultCameraRotation);
+		MyController->SetControlRotation(TargetControlRotation);
+	}
+	
+	if (!bIsClimbing)
+	{
+		// If we are using a True FPS Pawn, we "almost" always want this to be true.
+		bUseControllerRotationYaw = true;
+		FirstPersonCameraComponent->bUsePawnControlRotation = IsUsingFullBody;
+		//ResetBodyBP();
+	}
 
-	// If we are using a True FPS Pawn, we "almost" always want this to be true.
-	FirstPersonCameraComponent->bUsePawnControlRotation = IsUsingFullBody;
-
-	IsFreeLooking = false;
 }
 
 bool APrototype1Character::IsLookingBack() const
@@ -1220,6 +1239,9 @@ void APrototype1Character::StopInteracting(int HandIndex)
 
 	HandData.ResetHandState();
 
+	// Reset Camera if needed.
+	ResetLook(FirstPersonCameraComponent->GetComponentRotation());
+
 	OnEndGrab(HandData, HandIndex);
 }
 
@@ -1623,7 +1645,7 @@ FRotator APrototype1Character::GetHandRotation(const FHandsContextData& HandData
 
 	// Flip RightHand only.
 	// Perhaps get CapsuleComponent()->GetUpVector instead of camera?
-	return HandData.GetHandRotation(HandData.HandIndex == 0, GetCapsuleComponent()->GetRightVector(), -FirstPersonCameraComponent->GetUpVector());
+	return HandData.GetHandRotation(HandData.HandIndex == 0, Mesh1P->GetRightVector(), -FirstPersonCameraComponent->GetUpVector());
 }
 
 FVector APrototype1Character::RotateToHand(const FHandsContextData& HandData, const FVector& WorldRelative) const
