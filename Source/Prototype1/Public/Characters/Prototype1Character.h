@@ -562,6 +562,7 @@ private:
 	
 	FRotator FreeLookControlRotation;
 	float LookBackTimer = 0.f;
+	bool ForceUpdatePawn = false;
 
 	float CoyoteTimer = 0.f;
 

@@ -784,6 +784,7 @@ void APrototype1Character::BeginFreeLook(const FInputActionValue& Value)
 	}
 
 	IsFreeLooking = true;
+	ForceUpdatePawn = false;
 	FreeLookControlRotation = GetControlRotation();
 	bUseControllerRotationYaw = false;
 	//DefaultCameraRotation = FirstPersonCameraComponent->GetRelativeRotation();
@@ -801,9 +802,10 @@ void APrototype1Character::EndFreeLook(const FInputActionValue& Value)
 	LookBackTimer = LookBackTime;
 }
 
-// Maybe pass FreeLookControlRotation as parameter, so that we can call ActorRotation in some use cases
+// TODO: Maybe pass FreeLookControlRotation as parameter, so that we can call ActorRotation in some use cases
 void APrototype1Character::ResetLook(FRotator NewControlRotation)
 {
+	// TODO: Might move these out, since ResetLook can be called in the StopInteracting function
 	LookBackTimer = 0.f;
 	IsFreeLooking = false;
 
@@ -825,15 +827,19 @@ void APrototype1Character::ResetLook(FRotator NewControlRotation)
 
 		MyController->SetControlRotation(TargetControlRotation);
 	}
-	
-	if (!bIsClimbing)
+
+	if (!bIsClimbing || ForceUpdatePawn)
 	{
+		ForceUpdatePawn = false;
+
 		// If we are using a True FPS Pawn, we "almost" always want this to be true.
 		bUseControllerRotationYaw = true;
 		FirstPersonCameraComponent->bUsePawnControlRotation = IsUsingFullBody;
+		FirstPersonCameraComponent->SetWorldRotation(GetControlRotation());
+
+
 		//ResetBodyBP();
 	}
-
 }
 
 bool APrototype1Character::IsLookingBack() const
@@ -1240,7 +1246,25 @@ void APrototype1Character::StopInteracting(int HandIndex)
 	HandData.ResetHandState();
 
 	// Reset Camera if needed.
-	ResetLook(FirstPersonCameraComponent->GetComponentRotation());
+	if (!IsFreeLooking)
+	{
+		if (IsClimbing())
+		{
+			// Reset pawn and camera to face body
+			ForceUpdatePawn = true;
+			FreeLookControlRotation = Mesh1P->GetComponentRotation() + FRotator(0.0f, 90.0f, 0.0f);
+
+			// This is a hack to get EndFreeLook without enabling IsFreeLooking!
+			LookBackTimer = LookBackTime;
+		}
+		else
+		{
+			// Reset pawn to face body
+			FreeLookControlRotation = FirstPersonCameraComponent->GetComponentRotation();
+
+			ResetLook();
+		}
+	}
 
 	OnEndGrab(HandData, HandIndex);
 }
