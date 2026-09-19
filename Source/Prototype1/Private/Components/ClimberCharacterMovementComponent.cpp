@@ -320,6 +320,16 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 	
 	GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Blue, FString::Printf(TEXT("RightHandMeshDir: %f - LeftHandMeshDir: %f - IsInFrontOfHands: %hhd"), RightHandMeshDir, LeftHandMeshDir, IsInFrontOfHands));
 
+	if (!IsInFrontOfHands && HandMoveDir.IsZero())
+	{
+		//return;
+	}
+
+	if (IsInFrontOfHands)
+	{
+		return;
+	}
+
 	const FVector ForceInputDirection = IsInFrontOfHands ? -CharacterForward : CharacterForward;
 	const double IsPlayerInputOpposite = FVector::DotProduct(HorizontalHandsControlAcceleration, ForceInputDirection);
 	if (IsPlayerInputOpposite > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
@@ -332,7 +342,7 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 float UClimberCharacterMovementComponent::GetCoyoteGravityForce() const
 {
 	const float CoyoteStep = (1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration,HelperSpringIntensityFalloffTimer));
-	return FMath::Lerp(MinCoyoteGravityForce, GravityForce, CoyoteStep);
+	return FMath::Lerp(MinCoyoteGravityForce, GravityForce, CoyoteStep); // TODO: Swap this lerp out for a Curve instead, for fine tuning
 }
 
 void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 Iterations)
@@ -385,6 +395,8 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 				// Should it be one "extra" arm that does the load for the two arms? Or as an extra spring for each arm, but with lower force?
 				// The force of the spring should deteriorate over the period of this virtual arm spring existence, so that over time the force get lower until it releases. 
 				
+				DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + HandMoveDir * 10.0f, 0.f, FColor::Orange, false, 0.02f, 1, 0.25f);
+
 				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 				HandMoveDir = FVector::ZeroVector;
 			
@@ -414,7 +426,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 			// Compute Velocity by applying ClimbingAcceleration and HorizontalHandsControlAcceleration.
 			{
 				AnalogInputModifier = FMath::Clamp<FVector::FReal>(ClimbingAcceleration.Size() / GetMaxAcceleration(), 0.f, 1.f);
-				FVector FinalAcceleration = ClimbingAcceleration + HorizontalHandsControlAcceleration + HelperSpringAcceleration;
+				FVector FinalAcceleration = ClimbingAcceleration;// + HorizontalHandsControlAcceleration + HelperSpringAcceleration;
 
 				const float MaxDecel = GetMaxBrakingDeceleration();
 
@@ -442,6 +454,7 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 		FVector OldLocation = UpdatedComponent->GetComponentLocation();
 		const FVector Delta = Velocity * timeTick;
+		DrawDebugDirectionalArrow(GetWorld(), OldLocation, OldLocation + Delta * 100.0f, 0.f, FColor::Green, false, 0.02f, 2, 1.25f);
 
 		// The actual movement.
 		// We can try to move the ClimbingCollider before, and check for collisions then.
@@ -522,6 +535,9 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
 	}
 
+	DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + HandAcceleration * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 1, 0.25f);
+	DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + FVector::VectorPlaneProject(HandAcceleration, HandData.GetHandNormal()) * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 0, 0.5f);
+
 	// GEngine->AddOnScreenDebugMessage(37, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) Before: %f"), HandAcceleration.Length()));
 	// // Should this clamp be separate from Climbing and Horizontal?? (TODO: THIS MIGHT CAUSE A BUG BUG BUG!!!! (All these bugs are tags for me to find in the future in case it really does occur))
 	// HandAcceleration = HandAcceleration.GetClampedToMaxSize(GetMaxAcceleration());
@@ -531,14 +547,14 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 
 	// TODO: MIGHT GET REMOVED! 
 	// Now we update any object that we are holding.
-	if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
-	{
-		FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
-		FVector& PrevHandObjectVelocity = (HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
-		// HorizontalHandControlAcceleration should be inverted in this case
-		const FVector PlayerAcceleration = GravityForce * FVector::DownVector + HandAcceleration - HorizontalHandControlAcceleration;
-		MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaTime, PlayerAcceleration, PrevHandObjectLocation, PrevHandObjectVelocity, RootDeltaFixHand, this);
-	}
+	//if (MovementClimbingUtils::IsDynamicGrabObject(HandData))
+	//{
+	//	FVector& PrevHandObjectLocation = (HandIndex == 0) ? PrevRightHandObjectLocation : PrevLeftHandObjectLocation;
+	//	FVector& PrevHandObjectVelocity = (HandIndex == 0) ? PrevRightHandObjectVelocity : PrevLeftHandObjectVelocity;
+	//	// HorizontalHandControlAcceleration should be inverted in this case
+	//	const FVector PlayerAcceleration = GravityForce * FVector::DownVector + HandAcceleration - HorizontalHandControlAcceleration;
+	//	MovementClimbingUtils::UpdateGrabbableObjectVelocity(HandData, DeltaTime, PlayerAcceleration, PrevHandObjectLocation, PrevHandObjectVelocity, RootDeltaFixHand, this);
+	//}
 
 
 	// HandSlip Calculation.

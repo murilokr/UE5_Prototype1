@@ -619,6 +619,11 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	// Handling Input Buffers
 	ProcessInputBuffers(DeltaSeconds);
 
+
+	const FVector CameraLocation = FirstPersonCameraComponent->GetComponentLocation();
+	const FRotator CameraRotation = FirstPersonCameraComponent->GetComponentRotation();
+	DrawDebugDirectionalArrow(GetWorld(), CameraLocation, CameraLocation + CameraRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Blue, false, 0.02f, 0, 0);
+
 	TraceForHand(RightHandData);
 	TraceForHand(LeftHandData);
 
