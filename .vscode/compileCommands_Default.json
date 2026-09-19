@@ -1,0 +1,546 @@
+[
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\ALSV4_CPP.Build.cs",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\ALSV4_CPP.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\ALSV4_CPP.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\AI\\ALSAIController.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\AI\\ALS_BTTask_GetRandomLocation.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\AI\\ALS_BTTask_SetFocusToPlayer.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\ALSBaseCharacter.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\ALSCharacter.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\ALSCharacterMovementComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\ALSPlayerCameraManager.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\ALSPlayerController.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\ALSCharacterAnimInstance.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\ALSPlayerCameraBehavior.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSAnimNotifyCameraShake.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSAnimNotifyFootstep.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSAnimNotifyGroundedEntryState.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSNotifyStateEarlyBlendOut.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSNotifyStateMovementAction.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Character\\Animation\\Notify\\ALSNotifyStateOverlayOverride.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Components\\ALSDebugComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Components\\ALSMantleComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Private\\Library\\ALSMathLibrary.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\AI\\ALSAIController.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\AI\\ALS_BTTask_GetRandomLocation.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\AI\\ALS_BTTask_SetFocusToPlayer.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\ALSBaseCharacter.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\ALSCharacter.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\ALSCharacterMovementComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\ALSPlayerCameraManager.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\ALSPlayerController.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\ALSCharacterAnimInstance.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\ALSPlayerCameraBehavior.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSAnimNotifyCameraShake.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSAnimNotifyFootstep.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSAnimNotifyGroundedEntryState.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSNotifyStateEarlyBlendOut.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSNotifyStateMovementAction.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Character\\Animation\\Notify\\ALSNotifyStateOverlayOverride.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Components\\ALSDebugComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Components\\ALSMantleComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Library\\ALSAnimationStructLibrary.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Library\\ALSCharacterEnumLibrary.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Library\\ALSCharacterStructLibrary.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Library\\ALSMathLibrary.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Plugins\\ALS-Community-main\\Source\\ALSV4_CPP\\Public\\Library\\ALSStructEnumLibrary.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\ALSV4_CPP.43.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Characters\\Prototype1Character.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Components\\ClimberCharacterMovementComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Components\\InteractableActorComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Controllers\\Prototype1PlayerController.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Managers\\ClimberCameraManager.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Misc\\Debug\\MDebugHelper.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Prototype1.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Prototype1GameMode.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\Prototype1Projectile.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\TP_PickUpComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Private\\TP_WeaponComponent.cpp",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Prototype1.Build.cs",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Characters\\Prototype1Character.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Components\\ClimberCharacterMovementComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Components\\InteractableActorComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Controllers\\Prototype1PlayerController.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Managers\\ClimberCameraManager.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Misc\\Debug\\MDebugHelper.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Prototype1.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Prototype1GameMode.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\Prototype1Projectile.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\TP_PickUpComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	},
+	{
+		"file": "D:\\Projects\\UE5_Prototype1\\Source\\Prototype1\\Public\\TP_WeaponComponent.h",
+		"arguments": [
+			"C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.51.36231\\bin\\Hostx64\\x64\\cl.exe",
+			"@D:\\Projects\\UE5_Prototype1\\.vscode\\compileCommands_Default\\Prototype1.1.rsp"
+		],
+		"directory": "C:\\Program Files\\Epic Games\\UE_5.5\\Engine\\Source"
+	}
+]
