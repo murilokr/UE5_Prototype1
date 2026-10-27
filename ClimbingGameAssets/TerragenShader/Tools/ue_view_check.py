@@ -37,6 +37,11 @@ def setup():
             a.set_is_temporarily_hidden_in_editor(True)
     unreal.TerragenSkybox.finish_compilation()
     sky.redraw_from_actor_location()
+    # Everything is compiled by now, so this times the redraw on a quiet GPU.
+    ms = sky.measure_redraw_milliseconds(8)
+    unreal.log(f'[TerragenView] full six-face redraw: {ms:.1f} ms')
+    with open(os.path.join(OUT, 'timing.txt'), 'w') as f:
+        f.write(f'{ms:.2f}\n')
     state['location'] = sky.get_actor_location()
     state['before'] = set(glob.glob(os.path.join(SHOTS, '*.png')))
 

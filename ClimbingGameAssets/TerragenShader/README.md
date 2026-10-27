@@ -131,8 +131,9 @@ The last option stops the editor reopening last session's asset tabs. With those
 | GPU atlas vs the CPU harness, frames 1 and 400 | Silhouette overlap 1.000; colour within 1.1 levels (float rounding in the bump and speckle) |
 | GPU atlas vs Terragen | Overlap 0.996 at frame 1 and 0.986 at frame 400, the same as the CPU harness |
 | Level-viewport screenshots vs Terragen (`ue_view_check.py`) | Overlap 0.94–0.99 on the five faces with terrain; correct orientation, no mirroring |
+| Following the player: 300 m along Unreal +X, and 1 km below the start (lifted above the ground) | Unreal→Terragen mapping exact; GPU vs CPU overlap 1.000 on every face, colour within 2.3 levels |
 | Builds | Development and DebugGame editor targets. The game target too, with one caveat below |
-| Cost of a full six-face redraw of the 2048² atlas | 30 ms (so about 5 ms per face) |
+| Cost of a full six-face redraw of the 2048² atlas, RTX 4060 Ti | 30 ms on an idle GPU (about 5 ms per face); 59 ms while a game was also using the GPU |
 
 ### Things to know
 

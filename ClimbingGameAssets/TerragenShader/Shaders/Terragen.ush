@@ -8,8 +8,9 @@
 // Coordinates are Terragen's: x and y in grid points (0..Cells), z in terrain units, where one unit is
 // also one grid step (scale_m metres, from the .ter). +z is up; heading 0 looks along +y, 90 along +x.
 //
-// Not covered yet: the atmosphere (haze/blue/red layers), the sky dome and clouds, water reflections
-// and waves. The world these renders target has the atmosphere at zero and the sky turned off.
+// Also covered: the atmosphere (haze, blue and red layers with the sunlight penetration table), the sky
+// dome with the sun disc and the cloud layer (cloud map from Tools/make_cloud_map.py). Water is shaded
+// flat with an approximate reflection; Terragen's waves, surf and exact reflectivity curve are not ported.
 //
 // This file is also compiled as C++ by Tests/tg_render.cpp (through Tests/hlsl_shim.h), so it sticks
 // to a shared subset: no swizzles, no out/inout parameters, float literals written as floats. Include
@@ -25,6 +26,9 @@
 #define TG_MAX_LAYERS 8
 #define TG_MAX_DEPTH 4
 #define TG_MAX_LEVELS 24
+#define TG_MAX_ATMOS_STEPS 4096
+
+#include "TerragenPerlin.ush"
 
 static const float TG_DEG = 0.0174532925;
 
@@ -64,6 +68,53 @@ struct TGLayer
 	float SmallestSize;   // SMSZ
 };
 
+// The three atmosphere layers (GHAZ) as ReceiveRender (0x1002b1f0) prepares them. A layer whose Length is
+// 0 is off. Densities fall as 2^(-h / Half); Length is the distance over which density 1 halves light.
+struct TGAtmosphere
+{
+	float On;             // any layer present
+	float LutOn;          // sunlight is filtered by the atmosphere (penetration table, 0x10019b50)
+	float3 HazeColour;    // HCOL / 256
+	float3 BlueColour;    // BCOL / 256
+	float3 RedColour;     // RCOL / 256: per-channel light decay
+	float HazeLength;
+	float BlueLength;
+	float RedLength;
+	float HazeHalf;       // half heights, terrain units
+	float BlueHalf;
+	float RedHalf;
+	float Top;            // 6 * the largest half height, at least the cloud altitude
+	float Step;           // view-ray march step: (7680 / scale) / 2^ATAC
+	float LutStep;        // penetration table: an eighth of the smallest active half height
+	float LutBottom;      // minus the terrain size
+	float LutCount;       // entries - 1
+	float SunChord;       // sunlight path through one table shell
+	float PlanetRadius;   // atmosphere heights are measured above the curved sea level
+	float GlowAmount;     // GLOA
+	float GlowPower;      // GLOP
+	float GlowFlag;       // land and atmosphere shadows both on: unsaturated glow
+};
+
+// The sky dome and cloud layer (CLDL; cloud object layout from the CloudLayer* exports).
+struct TGSky
+{
+	float On;             // RSKY and a cloud layer
+	float Corona;         // sun disc edge falloff, 1 / CORS^2; 0 = hard edge
+	float DomeRadius;     // 32 * terrain size
+	float CloudN;         // cloud map cells per side (512)
+	float CloudExtent;    // CSIZ, terrain units
+	float CloudCell;      // CSIZ / N
+	float CloudContrast;  // CONT
+	float CloudBias;      // BIAS
+	float CloudMethod;    // REME: 0 cloud map, 1 marched
+	float CloudNoiseAmp;  // detail noise amplitude left by the map generator
+	float CloudDarkness;  // CDRK
+	float CloudSteps;     // 2^CLAC
+	float CloudStepsMax;  // 4 * 2^CLAC
+	float CloudNoiseLimit;// 2^(CLAC - 8)
+	float CloudSamples;   // samples the shader takes along a march that Terragen does in 16 * steps
+};
+
 struct TGWorld
 {
 	TGTerrain Terrain;
@@ -81,6 +132,9 @@ struct TGWorld
 	float CloudAltitude;        // terrain units
 	float CloudDepth;
 	float CloudSunlight;        // sunlight left under the cloud layer when clouds don't cast real shadows
+	float CloudFade;            // the dimming fades in over this height around the cloud altitude; also the
+	                            // cloud shadow grid spacing (the DLL uses the atmosphere step, see tgw_to_ush.py)
+	float CloudShadows;         // CCST: clouds cast real shadows (TG_CloudShadow)
 	float WaterPresent;
 	float WaterLevel;
 	float3 WaterColour;
@@ -88,7 +142,13 @@ struct TGWorld
 	float Gamma;                // GAMA
 	float Exposure;             // multiplies linear colour before the tone curve
 	float BumpTerrainValue;     // stand-in for a per-point map the bump amplitude reads (see TG_BumpAmplitude)
-	float3 BackgroundColour;    // shown where no terrain is hit (the sky is not rendered yet)
+	float3 BackgroundColour;    // shown where no terrain, water or sky is hit
+	float WaterReflectivity;    // approximate water reflection (see TG_ShadeWater); 0 = none
+	float WaterReflMinAngle;    // MINR, radians from the vertical
+	float WaterReflMaxAngle;    // MAXR
+	float WaterReflCurve;       // RCRV
+	TGAtmosphere Atmos;
+	TGSky Sky;
 	int NumLayers;
 	TGLayer Layers[TG_MAX_LAYERS];
 };
@@ -506,26 +566,683 @@ float TG_SunShadow(Texture2D HeightTex, TGTerrain T, TGSunInfo S, float x, float
 	return s;
 }
 
-// With "clouds cast shadows" off, points under the cloud layer get a uniform dimming (0x1001a100).
-float TG_CloudSunFactor(TGWorld W, float h)
-{
-	if (W.CloudsPresent == 0.0 || W.CloudDepth <= 0.0)
-	{
-		return 1.0;
-	}
-	float w = saturate((W.CloudAltitude - h) / W.CloudDepth + 0.5);
-	return 1.0 - (1.0 - W.CloudSunlight) * w;
-}
-
 // Light at a point (0x1001b710 with 0x1002d2a0): the sun through a smoothstepped shadow, plus a constant
-// ambient and three wrap-around ambient terms (sun side, away side, sky above).
-float3 TG_Light(TGWorld W, TGSunInfo S, float3 N, float sunFactor)
+// ambient and three wrap-around ambient terms (sun side, away side, sky above). sunLight is the sun colour
+// times its atmosphere transmittance, cloud dimming, shadow and N.L.
+float3 TG_Light(TGWorld W, TGSunInfo S, float3 N, float3 sunLight)
 {
 	float ndl = dot(N, S.Dir);
 	float wrapSun = max((ndl + 1.0) * 0.5, 0.0);
 	float wrapAway = max((1.0 - ndl) * 0.5, 0.0);
 	float wrapUp = max((N.z + 1.0) * 0.5, 0.0);
-	return W.SunColour * sunFactor + W.AmbientSun * wrapSun + W.AmbientAway * wrapAway + W.AmbientUp * wrapUp + W.Ambient;
+	return sunLight + W.AmbientSun * wrapSun + W.AmbientAway * wrapAway + W.AmbientUp * wrapUp + W.Ambient;
+}
+
+// ---------------------------------------------------------------- Perlin noise (cloud detail)
+
+float TG_SCurve(float t)
+{
+	return t * t * (3.0 - 2.0 * t);
+}
+
+// noise2 (0x10020d30): Perlin's reference noise with truncation instead of the +N offset.
+float TG_PerlinNoise2(float x, float y)
+{
+	int ix = (int)x;
+	int iy = (int)y;
+	float rx0 = x - (float)ix;
+	float ry0 = y - (float)iy;
+	float rx1 = rx0 - 1.0;
+	float ry1 = ry0 - 1.0;
+	int bx0 = ix & 255;
+	int bx1 = (bx0 + 1) & 255;
+	int by0 = iy & 255;
+	int by1 = (by0 + 1) & 255;
+	float sx = TG_SCurve(rx0);
+	float sy = TG_SCurve(ry0);
+	float2 q00 = TG_PerlinG2[TG_PerlinP[TG_PerlinP[bx0] + by0]];
+	float2 q10 = TG_PerlinG2[TG_PerlinP[TG_PerlinP[bx1] + by0]];
+	float2 q01 = TG_PerlinG2[TG_PerlinP[TG_PerlinP[bx0] + by1]];
+	float2 q11 = TG_PerlinG2[TG_PerlinP[TG_PerlinP[bx1] + by1]];
+	float a = lerp(rx0 * q00.x + ry0 * q00.y, rx1 * q10.x + ry0 * q10.y, sx);
+	float b = lerp(rx0 * q01.x + ry1 * q01.y, rx1 * q11.x + ry1 * q11.y, sx);
+	return lerp(a, b, sy);
+}
+
+float TG_PerlinDot3(int bx, int by, int bz, float rx, float ry, float rz)
+{
+	float3 g = TG_PerlinG3[TG_PerlinP[TG_PerlinP[TG_PerlinP[bx] + by] + bz]];
+	return rx * g.x + ry * g.y + rz * g.z;
+}
+
+// noise3 (0x10020e80): as noise2, hashing p[p[p[x] + y] + z].
+float TG_PerlinNoise3(float x, float y, float z)
+{
+	int ix = (int)x;
+	int iy = (int)y;
+	int iz = (int)z;
+	float rx0 = x - (float)ix;
+	float ry0 = y - (float)iy;
+	float rz0 = z - (float)iz;
+	float rx1 = rx0 - 1.0;
+	float ry1 = ry0 - 1.0;
+	float rz1 = rz0 - 1.0;
+	int bx0 = ix & 255;
+	int bx1 = (bx0 + 1) & 255;
+	int by0 = iy & 255;
+	int by1 = (by0 + 1) & 255;
+	int bz0 = iz & 255;
+	int bz1 = (bz0 + 1) & 255;
+	float sx = TG_SCurve(rx0);
+	float sy = TG_SCurve(ry0);
+	float sz = TG_SCurve(rz0);
+	float a = lerp(TG_PerlinDot3(bx0, by0, bz0, rx0, ry0, rz0), TG_PerlinDot3(bx1, by0, bz0, rx1, ry0, rz0), sx);
+	float b = lerp(TG_PerlinDot3(bx0, by1, bz0, rx0, ry1, rz0), TG_PerlinDot3(bx1, by1, bz0, rx1, ry1, rz0), sx);
+	float c = lerp(a, b, sy);
+	a = lerp(TG_PerlinDot3(bx0, by0, bz1, rx0, ry0, rz1), TG_PerlinDot3(bx1, by0, bz1, rx1, ry0, rz1), sx);
+	b = lerp(TG_PerlinDot3(bx0, by1, bz1, rx0, ry1, rz1), TG_PerlinDot3(bx1, by1, bz1, rx1, ry1, rz1), sx);
+	return lerp(c, lerp(a, b, sy), sz);
+}
+
+// Turbulence (0x10020b00): lacunarity 1.7, offset 0.225, octave weights 1/sqrt(frequency).
+float TG_Turbulence(float x, float y, float limit)
+{
+	float sum = 0.0;
+	if (limit < 1.0)
+	{
+		return sum;
+	}
+	float f = 1.0;
+	TG_LOOP for (int i = 0; i < 32 && f <= limit; i++)
+	{
+		sum += (abs(TG_PerlinNoise2(x * f, y * f)) - 0.225) / sqrt(f);
+		f *= 1.7;
+	}
+	return sum;
+}
+
+// fBm (0x10020b90) on noise2, octave weights 1/frequency.
+float TG_Fbm2(float x, float y, float limit)
+{
+	float sum = 0.0;
+	if (limit < 1.0)
+	{
+		return sum;
+	}
+	float f = 1.0;
+	TG_LOOP for (int i = 0; i < 32 && f <= limit; i++)
+	{
+		sum += TG_PerlinNoise2(x * f, y * f) / f;
+		f *= 1.7;
+	}
+	return sum;
+}
+
+// fBm (0x10020ca0) on noise3, octave weights 1/sqrt(frequency).
+float TG_Fbm3(float x, float y, float z, float limit)
+{
+	float sum = 0.0;
+	if (limit < 1.0)
+	{
+		return sum;
+	}
+	float f = 1.0;
+	TG_LOOP for (int i = 0; i < 32 && f <= limit; i++)
+	{
+		sum += TG_PerlinNoise3(x * f, y * f, z * f) / sqrt(f);
+		f *= 1.7;
+	}
+	return sum;
+}
+
+// ---------------------------------------------------------------- clouds and sky
+
+float TG_CloudTexel(Texture2D CloudTex, int x, int y)
+{
+	return floor(CloudTex.Load(int3(x, y, 0)).x * 255.0 + 0.5) - 128.0;
+}
+
+// Cloud map value at map coordinates, two triangles per cell like the terrain.
+float TG_CloudMapBase(Texture2D CloudTex, float u, float v)
+{
+	int ix = (int)u;
+	int iy = (int)v;
+	float fx = u - (float)ix;
+	float fy = v - (float)iy;
+	float m10 = TG_CloudTexel(CloudTex, ix + 1, iy);
+	float m01 = TG_CloudTexel(CloudTex, ix, iy + 1);
+	float m = 0.0;
+	if (fx + fy > 1.0)
+	{
+		float m11 = TG_CloudTexel(CloudTex, ix + 1, iy + 1);
+		m = (1.0 - fy) * (m10 - m11) + (1.0 - fx) * (m01 - m11) + m11;
+	}
+	else
+	{
+		float m00 = TG_CloudTexel(CloudTex, ix, iy);
+		m = m00 + (m10 - m00) * fx + (m01 - m00) * fy;
+	}
+	return m;
+}
+
+// Cloud density (0x1001cd40): the map plus turbulence detail; 0 off the map.
+float TG_CloudDensity(TGWorld W, Texture2D CloudTex, float u, float v, float limit)
+{
+	float top = W.Sky.CloudN - 0.001;
+	if (u < 0.0 || v < 0.0 || u > top || v > top)
+	{
+		return 0.0;
+	}
+	float d = TG_CloudMapBase(CloudTex, u, v);
+	if (W.Sky.CloudNoiseAmp != 0.0)
+	{
+		d += TG_Turbulence(u * 2.0, v * 2.0, limit) * W.Sky.CloudNoiseAmp;
+	}
+	return d;
+}
+
+struct TGCloudMarch
+{
+	float Tau;       // optical thickness
+	float3 Hit;      // first point with density (u, v, z)
+	float HasHit;
+};
+
+// Cloud march (0x1001d020). Terragen takes steps of 1/steps along dir (u, v in map cells, z in units) for up
+// to 16 * steps iterations, while z stays short of the slab face it heads for. view = 1 is the view/light
+// march: only points inside the slab count, |z| < (density + offset) * depth / 256, with the density there
+// (0x1001cec0) the map plus 3D detail; Terragen's downward branch never runs, so rays looking down see no
+// marched cloud. view = 0 sums the map along the path.
+// The shader takes Sky.CloudSamples segments of the path. z is linear along a segment, so the number of its
+// iterations that pass the z tests is exact; (u, v) are taken at the segment's middle.
+TGCloudMarch TG_CloudMarch(TGWorld W, Texture2D CloudTex, float u, float v, float z, float footprint, float3 dir,
+                           float steps, float limit, float view)
+{
+	TGCloudMarch M;
+	M.Tau = 0.0;
+	M.Hit = float3(0.0, 0.0, 0.0);
+	M.HasHit = 0.0;
+	steps = max(steps, 1.0);
+	float step = 1.0 / steps;
+	float iterations = 16.0 * steps;
+	float samples = min(W.Sky.CloudSamples, iterations);
+	float stride = iterations / samples;
+	float halfDepth = W.CloudDepth * 0.5;
+	float off = W.Sky.CloudBias;
+	if (W.Sky.CloudNoiseAmp != 0.0)
+	{
+		off += TG_Fbm2(u * 2.0, v * 2.0, 0.5 / footprint) * W.Sky.CloudNoiseAmp * footprint * 4.0;
+	}
+	// The march continues while z < zHi (heading up) or z > zLo (heading down).
+	float zLo = -1e30;
+	float zHi = 1e30;
+	if (dir.z > 0.0)
+	{
+		zHi = halfDepth;
+	}
+	else
+	{
+		zLo = view != 0.0 ? halfDepth : -halfDepth;
+	}
+	float sum = 0.0;
+	TG_LOOP for (int k = 0; k < (int)samples; k++)
+	{
+		float a = (float)k * stride;
+		float za = z + dir.z * step * a;
+		float zb = za + dir.z * step * stride;
+		bool running = dir.z > 0.0 ? za < zHi : za > zLo;
+		float ua = u + dir.x * step * a;
+		float va = v + dir.y * step * a;
+		if (!running || (int)ua < 0 || (int)va < 0 || (int)ua >= (int)W.Sky.CloudN || (int)va >= (int)W.Sky.CloudN)
+		{
+			break;
+		}
+		float su = ua + dir.x * step * stride * 0.5;
+		float sv = va + dir.y * step * stride * 0.5;
+		float lo = max(min(za, zb), zLo);
+		float hi = min(max(za, zb), zHi);
+		float d = 0.0;
+		if (view != 0.0)
+		{
+			float H = (TG_CloudDensity(W, CloudTex, su, sv, limit) + off) * W.CloudDepth * 0.00390625;
+			lo = max(lo, -H);
+			hi = min(hi, H);
+			if (hi >= lo)
+			{
+				float base = TG_CloudMapBase(CloudTex, su, sv);
+				if (W.Sky.CloudNoiseAmp != 0.0)
+				{
+					base += TG_Fbm3(su * 2.0, sv * 2.0, (lo + hi) * 1.0, limit) * W.Sky.CloudNoiseAmp;
+				}
+				d = max(base, -off) + off;
+			}
+		}
+		else
+		{
+			d = TG_CloudDensity(W, CloudTex, su, sv, W.Sky.CloudSteps) + W.Sky.CloudBias;
+		}
+		float span = abs(zb - za);
+		float frac = span > 1e-6 ? saturate((hi - lo) / span) : (hi >= lo ? 1.0 : 0.0);
+		if (view != 0.0 && M.HasHit == 0.0 && d > 0.0 && frac > 0.0)
+		{
+			float ze = dir.z >= 0.0 ? lo : hi;
+			float ie = a + (span > 1e-6 ? stride * abs(ze - za) / span : 0.0);
+			M.Hit = float3(u + dir.x * step * ie, v + dir.y * step * ie, ze);
+			M.HasHit = 1.0;
+		}
+		sum += d * stride * frac;
+	}
+	M.Tau = max(sum * W.Sky.CloudContrast * step, 0.0);
+	return M;
+}
+
+// Cloud shadow grid node (0x1001c560): sunlight transmittance through the cloud column at node (i, j). Nodes
+// are CloudFade apart; off the map they hold the uniform CloudSunlight. slant is 1 / sin(sun altitude).
+float TG_CloudShadowNode(TGWorld W, Texture2D CloudTex, int i, int j, float slant)
+{
+	float g = W.CloudFade / W.Sky.CloudCell;
+	float u = (float)i * g;
+	float v = (float)j * g;
+	if (u < 0.0 || v < 0.0 || u >= W.Sky.CloudN || v >= W.Sky.CloudN)
+	{
+		return W.CloudSunlight;
+	}
+	float d = max((TG_CloudDensity(W, CloudTex, u, v, 1.0) + W.Sky.CloudBias) * W.Sky.CloudContrast, 0.0);
+	return pow(0.99, d * W.CloudDepth * slant);
+}
+
+// Cloud shadow (0x1001be60) where the sun ray from p (at height h) crosses the cloud altitude: the grid
+// nodes blended with smoothstep weights. For a segment p0-p1 it averages 1 + floor(4 * length in nodes)
+// lookups (at most 64) spread along it, as the atmosphere march does.
+float TG_CloudShadow(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, float h0, float3 p1, float h1)
+{
+	float margin = (W.Sky.CloudExtent - (float)W.Terrain.Cells) * 0.5;
+	float g = W.CloudFade / W.Sky.CloudCell;
+	float sx = S.Dir.x / S.Dir.z;
+	float sy = S.Dir.y / S.Dir.z;
+	float gu0 = ((margin + p0.x + (W.CloudAltitude - h0) * sx) / W.Sky.CloudCell) / g;
+	float gv0 = ((margin + p0.y + (W.CloudAltitude - h0) * sy) / W.Sky.CloudCell) / g;
+	float gu1 = ((margin + p1.x + (W.CloudAltitude - h1) * sx) / W.Sky.CloudCell) / g;
+	float gv1 = ((margin + p1.y + (W.CloudAltitude - h1) * sy) / W.Sky.CloudCell) / g;
+	float slant = sqrt(sx * sx + sy * sy + 1.0);
+	int n = 1;
+	if (p0.x != p1.x || p0.y != p1.y || h0 != h1)
+	{
+		n = min(1 + (int)floor(4.0 * sqrt((gu1 - gu0) * (gu1 - gu0) + (gv1 - gv0) * (gv1 - gv0))), 64);
+	}
+	float du = (gu1 - gu0) / (float)n;
+	float dv = (gv1 - gv0) / (float)n;
+	float su = gu0 + du * 0.5;
+	float sv = gv0 + dv * 0.5;
+	float sum = 0.0;
+	TG_LOOP for (int k = 0; k < n; k++)
+	{
+		int i = (int)floor(su);
+		int j = (int)floor(sv);
+		float fx = su - (float)i;
+		float fy = sv - (float)j;
+		float wx = (3.0 - 2.0 * fx) * fx * fx;
+		float wy = (3.0 - 2.0 * fy) * fy * fy;
+		float t0 = lerp(TG_CloudShadowNode(W, CloudTex, i, j, slant), TG_CloudShadowNode(W, CloudTex, i + 1, j, slant), wx);
+		float t1 = lerp(TG_CloudShadowNode(W, CloudTex, i, j + 1, slant), TG_CloudShadowNode(W, CloudTex, i + 1, j + 1, slant), wx);
+		sum += lerp(t0, t1, wy);
+		su += du;
+		sv += dv;
+	}
+	return sum / (float)n;
+}
+
+// Cloud dimming of the sun at a point, or along a segment of the atmosphere march (0x1001a100). Below the
+// cloud layer it fades in over CloudFade around the cloud altitude (h is the atmosphere height when the
+// atmosphere is on). Without "clouds cast shadows" the dimming is uniform; with it, it is the cloud shadow.
+float TG_CloudSunFactor(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, float h0, float3 p1, float h1)
+{
+	if (W.CloudsPresent == 0.0 || W.CloudFade <= 0.0)
+	{
+		return 1.0;
+	}
+	float w = saturate((W.CloudAltitude - 0.5 * (h0 + h1)) / W.CloudFade + 0.5);
+	float T = W.CloudSunlight;
+	if (W.CloudShadows != 0.0 && w > 0.0)
+	{
+		T = S.Dir.z > 0.0 ? TG_CloudShadow(W, CloudTex, S, p0, h0, p1, h1) : 0.0;
+	}
+	return 1.0 - (1.0 - T) * w;
+}
+
+// ---------------------------------------------------------------- atmosphere
+
+// Height used by the atmosphere (0x10029b80): above the curved sea level, whatever the terrain's curvature.
+float TG_AtmosHeight(TGWorld W, float3 p)
+{
+	float R = W.Atmos.PlanetRadius;
+	float dx = p.x - (float)W.Terrain.Cells * 0.5;
+	float dy = p.y - (float)W.Terrain.Cells * 0.5;
+	return p.z + (R - sqrt(max(R * R - (dx * dx + dy * dy), 0.0)));
+}
+
+// 1 - 2^-x, accurate for small x.
+float TG_OneMinusExp2Neg(float x)
+{
+	return x < 0.001 ? x * 0.693147181 * (1.0 - 0.346573590 * x) : 1.0 - exp2(-x);
+}
+
+// Penetration table (0x10019b50) in closed form. Entry i holds the sunlight transmittance through the table
+// shells above it: each shell j (height LutBottom + j * LutStep) multiplies by RCOL^(2^(-h/RH) * c/L_red)
+// and 0.5^(2^(-h/HH) * c/L_haze), with h clamped at -64 half heights. This returns, for one layer, the sum
+// over shells j > i of 2^(-max(h_j, -64 Half) / Half).
+float TG_ShellSum(TGAtmosphere A, float Half, int i)
+{
+	int n = (int)A.LutCount;
+	int j0 = i + 1;
+	if (j0 > n)
+	{
+		return 0.0;
+	}
+	float s = A.LutStep;
+	float b = A.LutBottom;
+	float sum = 0.0;
+	int jc = (int)ceil((-64.0 * Half - b) / s);  // first shell above the clamp
+	if (j0 < jc)
+	{
+		int clamped = min(jc, n + 1) - j0;
+		sum += (float)clamped * 18446744073709551616.0;  // 2^64
+		j0 = jc;
+	}
+	if (j0 <= n)
+	{
+		float x = s / Half;
+		float first = exp2(-((float)j0 * s + b) / Half);
+		sum += first * TG_OneMinusExp2Neg(x * (float)(n - j0 + 1)) / TG_OneMinusExp2Neg(x);
+	}
+	return sum;
+}
+
+float3 TG_LutEntry(TGAtmosphere A, int i)
+{
+	float3 logT = float3(0.0, 0.0, 0.0);
+	if (A.RedLength > 0.0)
+	{
+		float k = TG_ShellSum(A, A.RedHalf, i) * A.SunChord / A.RedLength;
+		logT = float3(A.RedColour.x > 0.0 ? log(A.RedColour.x) * k : -1e30,
+		              A.RedColour.y > 0.0 ? log(A.RedColour.y) * k : -1e30,
+		              A.RedColour.z > 0.0 ? log(A.RedColour.z) * k : -1e30);
+	}
+	if (A.HazeLength > 0.0)
+	{
+		float k = TG_ShellSum(A, A.HazeHalf, i) * A.SunChord / A.HazeLength * -0.693147181;
+		logT = logT + float3(k, k, k);
+	}
+	return float3(exp(max(logT.x, -80.0)), exp(max(logT.y, -80.0)), exp(max(logT.z, -80.0)));
+}
+
+// Sunlight transmittance at an atmosphere height (0x1001a100): the table, interpolated between entries.
+float3 TG_SunTransmittance(TGWorld W, float h)
+{
+	TGAtmosphere A = W.Atmos;
+	if (A.On == 0.0 || A.LutOn == 0.0)
+	{
+		return float3(1.0, 1.0, 1.0);
+	}
+	float idx = (h - A.LutBottom) / A.LutStep;
+	int i = (int)idx;
+	float f = idx - (float)i;
+	int n = (int)A.LutCount;
+	int i0 = clamp(i, 0, n);
+	int i1 = clamp(i + 1, 0, n);
+	return lerp(TG_LutEntry(A, i0), TG_LutEntry(A, i1), f);
+}
+
+// Glow (0x1001b450): from the angle to the sun, never less than the sun's radius.
+float TG_Glow(TGWorld W, float cosAngle, float p, float flag)
+{
+	float r = W.SunDiameter * 0.008726646;
+	float a = max(acos(clamp(cosAngle, -1.0, 1.0)), r);
+	float amt = W.Atmos.GlowAmount;
+	float x = pow(amt / a, sqrt(p) * W.Atmos.GlowPower);
+	if (flag != 0.0)
+	{
+		float k = amt * 256.0;
+		return (1.0 - exp(-x / k)) * k;
+	}
+	return 1.0 - exp(-x);
+}
+
+// One march step (0x1001a350): red light decay, blue in-scatter, then haze, at the step's mean height.
+float3 TG_AtmosStep(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 colour, float3 p0, float3 p1, float stepLen,
+                    float glow, float lit)
+{
+	TGAtmosphere A = W.Atmos;
+	float h0 = TG_AtmosHeight(W, p0);
+	float h1 = TG_AtmosHeight(W, p1);
+	if (h0 > A.Top && h1 > A.Top)
+	{
+		return colour;
+	}
+	float hm = 0.5 * (h0 + h1);
+	float3 sun = W.SunColour * TG_SunTransmittance(W, hm) * (TG_CloudSunFactor(W, CloudTex, S, p0, h0, p1, h1) * lit);
+	float3 ambTot = W.AmbientSun + W.Ambient * 2.0 + W.AmbientUp + W.AmbientAway;
+	if (A.RedLength > 0.0)
+	{
+		float x = max(hm / A.RedHalf, -64.0);
+		if (x < 6.0)
+		{
+			float d = (exp2(-x) - 0.015625) * stepLen / A.RedLength;
+			colour = colour * float3(pow(A.RedColour.x, d), pow(A.RedColour.y, d), pow(A.RedColour.z, d));
+		}
+	}
+	if (A.BlueLength > 0.0)
+	{
+		float x = max(hm / A.BlueHalf, -64.0);
+		if (x < 6.0)
+		{
+			float d = (exp2(-x) - 0.015625) * stepLen / A.BlueLength;
+			colour = colour + (sun + ambTot) * A.BlueColour * d;
+		}
+	}
+	if (A.HazeLength > 0.0)
+	{
+		float x = max(hm / A.HazeHalf, -64.0);
+		if (x < 6.0)
+		{
+			float d = (exp2(-x) - 0.015625) * stepLen / A.HazeLength;
+			colour = lerp(colour, (sun * glow + ambTot) * A.HazeColour, TG_OneMinusExp2Neg(d));
+		}
+	}
+	return colour;
+}
+
+// March from the far end p1 to the near end p0 in fixed steps (0x1001a730), the first step being the
+// leftover partial one at the far end.
+float3 TG_AtmosMarch(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, float3 p1, float glow, float lit, float3 colour)
+{
+	float3 d = p1 - p0;
+	float len = length(d);
+	if (len < 0.0001)
+	{
+		return colour;
+	}
+	float stepLen = max(W.Atmos.Step, len / (float)TG_MAX_ATMOS_STEPS);
+	float f = len / stepLen;
+	int n = (int)floor(f);
+	float3 stepVec = d / f;
+	colour = TG_AtmosStep(W, CloudTex, S, colour, p0 + stepVec * (float)n, p1, (f - (float)n) * stepLen, glow, lit);
+	TG_LOOP for (int i = n - 1; i >= 0; i--)
+	{
+		colour = TG_AtmosStep(W, CloudTex, S, colour, p0 + stepVec * (float)i, p0 + stepVec * (float)(i + 1), stepLen, glow, lit);
+	}
+	return colour;
+}
+
+// Atmosphere between the camera side p0 and a far point p1 (0x1001aad0). Terragen splits the segment where
+// it crosses the terrain grid's edges; that only matters when both ends are outside the grid. Atmospheric
+// shadows (the lit < 1 runs inside the grid) are not modelled; Terragen skips them too whenever the segment
+// has fewer than two crossings, which includes every camera inside the grid.
+float3 TG_Atmosphere(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, float3 p1, float glow, float3 colour)
+{
+	if (W.Atmos.On == 0.0)
+	{
+		return colour;
+	}
+	float n = (float)W.Terrain.Cells;
+	float dx = p1.x - p0.x;
+	float dy = p1.y - p0.y;
+	float c0 = -1.0;
+	float c1 = -1.0;
+	float c2 = -1.0;
+	float c3 = -1.0;
+	if (abs(dx) > 0.0001)
+	{
+		c0 = -p0.x * (dy / dx) + p0.y + 0.0001;
+		if (c0 >= n + 0.0002) { c0 = -c0; }
+		c1 = (n - p0.x) * (dy / dx) + p0.y + 0.0001;
+		if (c1 >= n + 0.0002) { c1 = -c1; }
+	}
+	if (abs(dy) > 0.0001)
+	{
+		c2 = -p0.y * (dx / dy) + p0.x + 0.0001;
+		if (c2 >= n + 0.0002) { c2 = -c2; }
+		c3 = (n - p0.y) * (dx / dy) + p0.x + 0.0001;
+		if (c3 >= n + 0.0002) { c3 = -c3; }
+	}
+	float lo = 1.0;
+	float hi = 0.0;
+	if (c0 >= 0.0) { float f = -p0.x / dx; if (f < 1.0) { lo = f; } if (f > 0.0) { hi = f; } }
+	if (c1 >= 0.0) { float f = (n - p0.x) / dx; lo = min(lo, f); hi = max(hi, f); }
+	if (c2 >= 0.0) { float f = -p0.y / dy; lo = min(lo, f); hi = max(hi, f); }
+	if (c3 >= 0.0) { float f = (n - p0.y) / dy; lo = min(lo, f); hi = max(hi, f); }
+	lo = max(lo, 0.0);
+	hi = min(hi, 1.0);
+	if (hi <= lo)
+	{
+		colour = TG_AtmosMarch(W, CloudTex, S, p0, p1, glow, 1.0, colour);
+	}
+	else
+	{
+		float3 pe = lerp(p0, p1, lo);
+		float3 px = lerp(p0, p1, hi);
+		if (hi < 1.0) { colour = TG_AtmosMarch(W, CloudTex, S, px, p1, glow, 1.0, colour); }
+		colour = TG_AtmosMarch(W, CloudTex, S, pe, px, glow, 1.0, colour);
+		if (lo > 0.0) { colour = TG_AtmosMarch(W, CloudTex, S, p0, pe, glow, 1.0, colour); }
+	}
+	return colour;
+}
+
+// ---------------------------------------------------------------- sky
+
+// Sky dome point (0x1001d430): sun disc, the atmosphere above the cloud layer, the cloud, then the atmosphere
+// from the camera. dome is the point on the dome sphere, (u, v) its cloud-map coordinates, footprint the
+// pixel's size in map cells.
+float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float3 dome, float u, float v, float footprint)
+{
+	float3 d = dome - cam;
+	float3 dn = normalize(d);
+	float cosA = dot(dn, S.Dir);
+	float glow = TG_Glow(W, cosA, 1.0, 1.0);
+	float3 colour = float3(0.0, 0.0, 0.0);
+
+	float r = W.SunDiameter * 0.008726646;
+	if (r > 0.0)
+	{
+		float a = acos(clamp(cosA, -1.0, 1.0));
+		float f = 1.0 / (r * r);
+		if (a > r)
+		{
+			float k = 1.0 + (a / r - 1.0) * W.Sky.Corona;
+			f = W.Sky.Corona > 0.0 ? f / (k * k) : 0.0;
+		}
+		colour = W.SunColour * (f * 256.0);
+	}
+
+	float ext = (W.Atmos.Top - W.CloudAltitude) / (W.CloudAltitude - cam.z);
+	if (ext > 0.0)
+	{
+		colour = TG_Atmosphere(W, CloudTex, S, dome, dome + d * ext, glow, colour);
+	}
+
+	// Terragen backs the start up by -dz / cell size in z (kept inside the slab) and by the matching amount
+	// along the ray in map cells, mixing units as it does.
+	float startZ = clamp(-dn.z / W.Sky.CloudCell, -W.CloudDepth * 0.5, W.CloudDepth * 0.5);
+	float su = dn.z != 0.0 ? u + dn.x / dn.z * startZ : u;
+	float sv = dn.z != 0.0 ? v + dn.y / dn.z * startZ : v;
+	float tau = 0.0;
+	float light = 0.0;
+	float marched = W.Sky.CloudMethod != 0.0 ? 1.0 : 0.0;
+	float slant = 1.0;
+	TGCloudMarch view;
+	view.Tau = 0.0;
+	view.Hit = float3(0.0, 0.0, 0.0);
+	view.HasHit = 0.0;
+	if (marched == 0.0)
+	{
+		float above = W.CloudAltitude - cam.z;
+		slant = sqrt((dn.y / above) * (dn.y / above) + (dn.x / above) * (dn.x / above) + 1.0);
+		float c = max(TG_CloudDensity(W, CloudTex, u, v, 1.0 / footprint) + W.Sky.CloudBias, 0.0);
+		tau = sqrt(c * 0.00390625) * W.Sky.CloudContrast * c * slant * W.CloudDepth;
+	}
+	else
+	{
+		float limit = min(W.Sky.CloudStepsMax, W.Sky.CloudNoiseLimit / footprint);
+		view = TG_CloudMarch(W, CloudTex, su, sv, startZ, footprint, dn, W.Sky.CloudStepsMax, limit, 1.0);
+		tau = view.Tau;
+	}
+	float transmit = pow(0.99, tau);
+	float glow2 = TG_Glow(W, cosA, transmit, 1.0);
+	if (marched != 0.0)
+	{
+		if (view.HasHit != 0.0)
+		{
+			TGCloudMarch toSun = TG_CloudMarch(W, CloudTex, view.Hit.x, view.Hit.y, view.Hit.z, footprint, S.Dir,
+			                                   W.Sky.CloudStepsMax, W.Sky.CloudSteps, 1.0);
+			light = pow(0.99, toSun.Tau * W.Sky.CloudDarkness) * glow2;
+		}
+	}
+	else
+	{
+		float3 dir2 = float3(S.Dir.x - dn.x, S.Dir.y - dn.y, S.Dir.z);
+		TGCloudMarch toSun = TG_CloudMarch(W, CloudTex, su, sv, startZ, footprint, dir2, W.Sky.CloudSteps, 0.0, 0.0);
+		light = pow(0.99, toSun.Tau * slant / sqrt(dir2.x * dir2.x + dir2.y * dir2.y + 1.0) * W.Sky.CloudDarkness);
+	}
+	float3 sunT = TG_SunTransmittance(W, W.CloudAltitude) *
+	              TG_CloudSunFactor(W, CloudTex, S, dome, W.CloudAltitude, dome, W.CloudAltitude);
+	float3 ambSum = W.Ambient * 2.0 + W.AmbientUp + W.AmbientAway;
+	float3 cloud = (W.AmbientSun * light + sunT * W.SunColour * (glow2 * light) + ambSum) * W.Atmos.HazeColour;
+	colour = lerp(colour, cloud, 1.0 - transmit);
+
+	return TG_Atmosphere(W, CloudTex, S, cam, dome, glow, colour);
+}
+
+// The sky seen along a ray that hit no terrain: the dome sphere (0x1001e0d0) is centred under the grid
+// centre with radius 32 * terrain size, its top at the cloud altitude, and covers the cloud map's extent.
+// Returns rgb and, in w, 1 if the dome was hit.
+float4 TG_SkyRay(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D, float PixelAngle)
+{
+	float R = W.Sky.DomeRadius;
+	float3 C = float3((float)W.Terrain.Cells * 0.5, (float)W.Terrain.Cells * 0.5, W.CloudAltitude - R);
+	float3 oc = O - C;
+	float b = dot(oc, D);
+	float c = dot(oc, oc) - R * R;
+	float disc = b * b - c;
+	if (disc < 0.0)
+	{
+		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
+	}
+	float t = -b + sqrt(disc);
+	if (t <= 0.0)
+	{
+		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
+	}
+	float3 P = O + D * t;
+	float margin = (W.Sky.CloudExtent - (float)W.Terrain.Cells) * 0.5;
+	float u = (P.x + margin) / W.Sky.CloudCell;
+	float v = (P.y + margin) / W.Sky.CloudCell;
+	if (u < 0.0 || v < 0.0 || u > W.Sky.CloudN || v > W.Sky.CloudN)
+	{
+		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
+	}
+	float footprint = max(t * PixelAngle / max(W.Detail, 0.01) / W.Sky.CloudCell, 0.001);
+	float3 sky = TG_ShadeSky(W, CloudTex, S, O, P, u, v, footprint);
+	return float4(sky.x, sky.y, sky.z, 1.0);
 }
 
 // ---------------------------------------------------------------- tone curve
@@ -714,12 +1431,8 @@ TGHit TG_Trace(TGWorld W, Texture2D HeightTex, float3 O, float3 D, float tStart)
 
 // ---------------------------------------------------------------- entry points
 
-// Shade one ray. O is in Terragen coordinates, D need not be normalised. PixelAngle is the angle one
-// pixel subtends (1 / focal length in pixels); it sets the detail footprint like Terragen's micro-polygon
-// size. StartDistance skips terrain closer than that many grid units.
-TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+TGShadeResult TG_EmptyResult(TGWorld W)
 {
-	D = normalize(D);
 	TGShadeResult R;
 	R.Linear = W.BackgroundColour;
 	R.Alpha = 0.0;
@@ -729,32 +1442,23 @@ TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, fl
 	R.NormalZ = 1.0;
 	R.Distance = -1.0;
 	R.Kind = 0;
+	return R;
+}
 
-	TGHit hit = TG_Trace(W, HeightTex, O, D, StartDistance);
-	if (hit.Kind == 0)
-	{
-		return R;
-	}
-	TGSunInfo S = TG_MakeSun(W);
-	float footprint = max(hit.T * PixelAngle / max(W.Detail, 0.01), 1e-4);
-	R.Alpha = 1.0;
-	R.Distance = hit.T;
-	R.Kind = hit.Kind;
+// Sunlight reaching a point: the penetration table at its atmosphere height. The cloud dimming uses the
+// atmosphere height too, as Terragen does; with the atmosphere off it keeps the plain height.
+float TG_CloudHeight(TGWorld W, float3 P)
+{
+	return W.Atmos.On != 0.0 ? TG_AtmosHeight(W, P) : P.z;
+}
 
-	if (hit.Kind == 2)
-	{
-		// Water: flat, no reflection or waves yet.
-		float3 N = float3(0.0, 0.0, 1.0);
-		float sunFactor = TG_CloudSunFactor(W, hit.P.z) * max(dot(N, S.Dir), 0.0);
-		R.Albedo = W.WaterColour;
-		R.SunTerm = sunFactor;
-		R.NdotL = S.Dir.z;
-		R.Linear = W.WaterColour * TG_Light(W, S, N, sunFactor);
-		return R;
-	}
-
-	float x = hit.P.x;
-	float y = hit.P.y;
+// A lit terrain point (0x1002d620 before its atmosphere call): surface tree, bump, light, soft shadow.
+TGShadeResult TG_ShadeTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, TGSunInfo S, float3 P,
+                              float footprint)
+{
+	TGShadeResult R = TG_EmptyResult(W);
+	float x = P.x;
+	float y = P.y;
 	// Base gradient from the heightfield at +-0.5 cell (0x1002d4e0).
 	float2 grad0 = float2(TG_TerrainHeight(HeightTex, W.Terrain, x + 0.5, y) - TG_TerrainHeight(HeightTex, W.Terrain, x - 0.5, y),
 	                      TG_TerrainHeight(HeightTex, W.Terrain, x, y + 0.5) - TG_TerrainHeight(HeightTex, W.Terrain, x, y - 0.5));
@@ -768,20 +1472,106 @@ TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, fl
 		shadow = TG_SunShadow(HeightTex, W.Terrain, S, x, y, h);
 	}
 	float smoothShadow = shadow * shadow * (3.0 - 2.0 * shadow);
-	float sunFactor = TG_CloudSunFactor(W, h) * (1.0 - smoothShadow) * max(dot(N, S.Dir), 0.0);
+	float3 at = float3(x, y, h);
+	float hc = TG_CloudHeight(W, at);
+	float sunFactor = TG_CloudSunFactor(W, CloudTex, S, at, hc, at, hc) * (1.0 - smoothShadow) * max(dot(N, S.Dir), 0.0);
+	float3 sunT = TG_SunTransmittance(W, TG_AtmosHeight(W, at));
 
+	R.Alpha = 1.0;
+	R.Kind = 1;
 	R.Albedo = surf.Colour;
 	R.SunTerm = sunFactor;
 	R.NdotL = dot(N, S.Dir);
 	R.NormalZ = N.z;
-	R.Linear = surf.Colour * TG_Light(W, S, N, sunFactor);
+	R.Linear = surf.Colour * TG_Light(W, S, N, W.SunColour * sunT * sunFactor);
+	return R;
+}
+
+// Water: the flat plane lit like Terragen, plus a mirror reflection of terrain and sky. Terragen's water
+// (0x10035dc0, 0x10035020) also has waves, surf, depth transparency, a sun highlight and its own
+// reflectivity curve; here the reflectivity rises from 0 at WaterReflMinAngle to 1 at WaterReflMaxAngle
+// (incidence from the vertical) with exponent 1 / WaterReflCurve, an approximation.
+TGShadeResult TG_ShadeWater(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, TGSunInfo S,
+                            float3 O, float3 P, float footprint, float PixelAngle)
+{
+	TGShadeResult R = TG_EmptyResult(W);
+	float3 N = float3(0.0, 0.0, 1.0);
+	float hc = TG_CloudHeight(W, P);
+	float sunFactor = TG_CloudSunFactor(W, CloudTex, S, P, hc, P, hc) * max(dot(N, S.Dir), 0.0);
+	float3 sunT = TG_SunTransmittance(W, TG_AtmosHeight(W, P));
+	R.Alpha = 1.0;
+	R.Kind = 2;
+	R.Albedo = W.WaterColour;
+	R.SunTerm = sunFactor;
+	R.NdotL = S.Dir.z;
+	R.Linear = W.WaterColour * TG_Light(W, S, N, W.SunColour * sunT * sunFactor);
+	if (W.WaterReflectivity <= 0.0)
+	{
+		return R;
+	}
+	float3 V = normalize(P - O);
+	float incidence = acos(clamp(-V.z, -1.0, 1.0));
+	float t = saturate((incidence - W.WaterReflMinAngle) / max(W.WaterReflMaxAngle - W.WaterReflMinAngle, 0.001));
+	float refl = W.WaterReflectivity * pow(t, 1.0 / max(W.WaterReflCurve, 0.01));
+	float3 Rd = float3(V.x, V.y, -V.z);
+	float3 from = float3(P.x, P.y, P.z + 0.0001);
+	float3 c = W.BackgroundColour;
+	TGHit hit = TG_Trace(W, HeightTex, from, Rd, 0.0);
+	if (hit.Kind == 1)
+	{
+		float fp2 = max((length(P - O) + hit.T) * PixelAngle / max(W.Detail, 0.01), 1e-4);
+		c = TG_ShadeTerrain(W, HeightTex, NoiseTex, CloudTex, S, hit.P, fp2).Linear;
+		c = TG_Atmosphere(W, CloudTex, S, from, hit.P, TG_Glow(W, dot(Rd, S.Dir), 1.0, W.Atmos.GlowFlag), c);
+	}
+	else if (W.Sky.On != 0.0)
+	{
+		float4 sky = TG_SkyRay(W, CloudTex, S, from, Rd, PixelAngle);
+		c = float3(sky.x, sky.y, sky.z);
+	}
+	R.Linear = lerp(R.Linear, c, refl);
+	return R;
+}
+
+// Shade one ray. O is in Terragen coordinates, D need not be normalised. PixelAngle is the angle one
+// pixel subtends (1 / focal length in pixels); it sets the detail footprint like Terragen's micro-polygon
+// size. StartDistance skips terrain closer than that many grid units. CloudTex is the world's cloud map
+// (only read when the sky is on). Rays that hit nothing show the sky, with Alpha 0.
+TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+{
+	D = normalize(D);
+	TGShadeResult R = TG_EmptyResult(W);
+	TGSunInfo S = TG_MakeSun(W);
+	TGHit hit = TG_Trace(W, HeightTex, O, D, StartDistance);
+	if (hit.Kind == 0)
+	{
+		if (W.Sky.On != 0.0)
+		{
+			float4 sky = TG_SkyRay(W, CloudTex, S, O, D, PixelAngle);
+			R.Linear = float3(sky.x, sky.y, sky.z);
+		}
+	}
+	else
+	{
+		float footprint = max(hit.T * PixelAngle / max(W.Detail, 0.01), 1e-4);
+		if (hit.Kind == 2)
+		{
+			R = TG_ShadeWater(W, HeightTex, NoiseTex, CloudTex, S, O, hit.P, footprint, PixelAngle);
+		}
+		else
+		{
+			R = TG_ShadeTerrain(W, HeightTex, NoiseTex, CloudTex, S, hit.P, footprint);
+		}
+		R.Distance = hit.T;
+		// Atmosphere between the camera and the point, with the glow towards the sun (0x1002d620).
+		R.Linear = TG_Atmosphere(W, CloudTex, S, O, hit.P, TG_Glow(W, dot(D, S.Dir), 1.0, W.Atmos.GlowFlag), R.Linear);
+	}
 	return R;
 }
 
 // Display colour (Terragen's exposure and tone curve applied) and coverage alpha.
-float4 TG_RenderRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+float4 TG_RenderRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 O, float3 D, float PixelAngle, float StartDistance)
 {
-	TGShadeResult R = TG_ShadeRay(W, HeightTex, NoiseTex, O, D, PixelAngle, StartDistance);
+	TGShadeResult R = TG_ShadeRay(W, HeightTex, NoiseTex, CloudTex, O, D, PixelAngle, StartDistance);
 	float3 c = TG_ToneMap(W, R.Linear);
 	return float4(c.x, c.y, c.z, R.Alpha);
 }

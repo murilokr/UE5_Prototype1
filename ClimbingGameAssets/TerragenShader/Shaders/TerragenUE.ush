@@ -126,7 +126,8 @@ float3 TG_KeepAboveTerrain(TGWorld W, Texture2D HeightTex, float3 P, float Clear
 
 // Render one atlas texel. Returns display colour (Terragen tone curve applied) and alpha (0 = sky or
 // outside the faces). Write it to an 8-bit linear (non-sRGB) target to get Terragen's bytes exactly.
-float4 TG_RenderAtlasTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float StartDistance, float Clearance)
+// CloudTex is the world's cloud map from Tools/make_cloud_map.py; it is only read when the sky is on.
+float4 TG_RenderAtlasTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float StartDistance, float Clearance)
 {
 	float4 d = TG_AtlasDirection(UV, AtlasHeading, FaceSize);
 	if (d.w == 0.0)
@@ -134,7 +135,14 @@ float4 TG_RenderAtlasTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, f
 		return float4(0.0, 0.0, 0.0, 0.0);
 	}
 	float3 eye = TG_KeepAboveTerrain(W, HeightTex, CameraPos, Clearance);
-	return TG_RenderRay(W, HeightTex, NoiseTex, eye, float3(d.x, d.y, d.z), 2.0 / FaceSize, StartDistance);
+	return TG_RenderRay(W, HeightTex, NoiseTex, CloudTex, eye, float3(d.x, d.y, d.z), 2.0 / FaceSize, StartDistance);
+}
+
+// The signature M_TerragenRender was created with (no cloud map). Only for worlds where the cloud map is
+// never read: sky off and clouds not casting shadows, like MountainTop. NoiseTex just fills the slot.
+float4 TG_RenderAtlasTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float StartDistance, float Clearance)
+{
+	return TG_RenderAtlasTexel(W, HeightTex, NoiseTex, NoiseTex, UV, CameraPos, AtlasHeading, FaceSize, StartDistance, Clearance);
 }
 
 // Unreal (X forward, Y right, Z up) to Terragen (x right, y forward at heading 0, z up). HeadingAtPlusX is

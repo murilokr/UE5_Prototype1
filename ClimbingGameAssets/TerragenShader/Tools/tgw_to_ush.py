@@ -4,14 +4,19 @@ The output defines `TGWorld TGWorld_<Name>()`, filled with the world's sun, back
 dimming, tone curve and the whole surface-layer tree, ready for TG_RenderRay in Terragen.ush. It also
 defines the world file's camera position and heading as TGWorld_<Name>_CameraPos / _CameraHeading.
 
+With the sky on (RSKY) it also fills the atmosphere and the sky dome / cloud layer; the cloud map itself comes
+from make_cloud_map.py.
+
 Usage: python tgw_to_ush.py <world.tgw> <terrain.json> -o <out.ush> --name <Name>
-         [--sun-scale K] [--ambient-scale K] [--exposure E]
+         [--sun-scale K] [--ambient-scale K] [--exposure E] [--sun HEADING ALTITUDE] [--cloud-fade-depth]
+         [--sun-path-scale K] [--cloud-samples N]
 """
 import argparse
 import json
 import math
 import os
 
+import make_cloud_map
 from tgfiles import read_tgw
 
 MAX_LAYERS = 8
@@ -33,6 +38,90 @@ def f2(a, b):
 
 def f3(c):
     return f'float3({f(c[0])}, {f(c[1])}, {f(c[2])})'
+
+
+def atmosphere_step(world, ter):
+    """The view-ray march step, (7680 / scale) / 2^ATAC; 0x1001a100 also uses it for the cloud dimming."""
+    return 7680.0 / ter['scale_m'] / 2.0 ** world.find('WLDG').f32('ATAC', 4.0)
+
+
+def atmosphere_fields(world, ter, sun_path_scale, sun_altitude):
+    """The atmosphere as ReceiveRender (0x1002b1f0) and the penetration table (0x10019b50) prepare it."""
+    atli = world.find('ATLI')
+    ghaz, lita, ligt, cldl = atli.find('GHAZ'), atli.find('LITA'), atli.find('LIGT'), atli.find('CLDL')
+    scale = ter['scale_m']
+    span = 7680.0 / scale
+
+    def length(d):
+        return max((1.0 - d) * span / d, 0.01) if d != 0.0 else 0.0
+
+    dh, db, dr = ghaz.f32('HVAL'), ghaz.f32('BVAL'), ghaz.f32('RVAL')
+    hh, bh, rh = ghaz.f32('HHH ', 1.0), ghaz.f32('BHH ', 1.0), ghaz.f32('RHH ', 1.0)
+    top = 6.0 * max(hh, bh, rh)
+    if cldl and cldl.f32('ALT ') > top:
+        top = cldl.f32('ALT ')
+    lut = max(rh, hh)
+    if dh != 0.0 and hh < lut:
+        lut = hh
+    if dr != 0.0 and rh < lut:
+        lut = rh
+    lut *= 0.125
+    bottom = -float(ter['cells'])
+    radius = ter['planet_radius_km'] * 1000.0 / scale
+    sin_a = math.sin(math.radians(sun_altitude))
+    chord = (math.sqrt((lut + radius) ** 2 + sin_a * sin_a * radius * radius - radius * radius) - sin_a * radius) * sun_path_scale
+    return {
+        'On': 1.0 if (dh != 0.0 or db != 0.0 or dr != 0.0) else 0.0,
+        'LutOn': 1.0 if lita.f32('ACST') != 0.0 else 0.0,
+        'HazeColour': ghaz.colour('HCOL'),
+        'BlueColour': ghaz.colour('BCOL'),
+        'RedColour': ghaz.colour('RCOL'),
+        'HazeLength': length(dh),
+        'BlueLength': length(db),
+        'RedLength': length(dr),
+        'HazeHalf': hh,
+        'BlueHalf': bh,
+        'RedHalf': rh,
+        'Top': top,
+        'Step': atmosphere_step(world, ter),
+        'LutStep': lut,
+        'LutBottom': bottom,
+        'LutCount': float(int((top - bottom) / lut)),
+        'SunChord': chord,
+        'PlanetRadius': radius,
+        'GlowAmount': lita.f32('GLOA', 1.0),
+        'GlowPower': lita.f32('GLOP', 1.0),
+        'GlowFlag': 1.0 if (ligt.f32('LCST', 1.0) != 0.0 and lita.f32('ATSH') != 0.0) else 0.0,
+    }
+
+
+def sky_fields(world, ter, samples):
+    """The sky dome and cloud layer: ConsCloudLayer(.., 512, ..), SetCloudLayerProperties, ReceiveRender."""
+    wldg, atli = world.find('WLDG'), world.find('ATLI')
+    cldl, sun = atli.find('CLDL'), atli.find('SUN ')
+    n = make_cloud_map.N
+    steps = 2.0 ** wldg.f32('CLAC', 6.0)
+    persistence = cldl.f32('GPRS', 0.25) if cldl else 0.25
+    noise_amp = make_cloud_map.noise_amplitude(persistence, make_cloud_map.feature_steps(cldl)) if cldl else 0.0
+    cors = sun.f32('CORS')
+    extent = cldl.f32('CSIZ', 4096.0) if cldl else 4096.0
+    return {
+        'On': 1.0 if (wldg.f32('RSKY') != 0.0 and cldl) else 0.0,
+        'Corona': 1.0 / (cors * cors) if cors > 0.0 else 0.0,
+        'DomeRadius': 32.0 * ter['cells'],
+        'CloudN': float(n),
+        'CloudExtent': extent,
+        'CloudCell': extent / n,
+        'CloudContrast': cldl.f32('CONT') if cldl else 0.0,
+        'CloudBias': float(int(cldl.f32('BIAS'))) if cldl else 0.0,
+        'CloudMethod': float(cldl.i32('REME')) if cldl else 0.0,
+        'CloudNoiseAmp': noise_amp,
+        'CloudDarkness': atli.find('GHAZ').f32('CDRK'),
+        'CloudSteps': steps,
+        'CloudStepsMax': 4.0 * steps,
+        'CloudNoiseLimit': 2.0 ** (wldg.f32('CLAC', 6.0) - 8.0),
+        'CloudSamples': samples,
+    }
 
 
 def collect_layers(srfl, parent, out):
@@ -83,6 +172,17 @@ def main():
     ap.add_argument('--ambient-scale', type=float, nargs=3, default=[1.0, 1.0, 1.0], metavar=('R', 'G', 'B'),
                     help='multiplier on the background light (colour * BRSC)')
     ap.add_argument('--exposure', type=float, help='linear exposure before the tone curve (default: EXPO)')
+    # ReceiveLighting scales the penetration table's sun path by a lighting-struct value * 0.01 whose GUI
+    # source isn't decoded; 1 assumes it is passed as 100.
+    ap.add_argument('--sun-path-scale', type=float, default=1.0, help='scale on the sun path through the atmosphere')
+    ap.add_argument('--cloud-samples', type=float, default=64.0,
+                    help='samples per cloud march (Terragen iterates 16 * 4 * 2^CLAC times)')
+    ap.add_argument('--sun', type=float, nargs=2, metavar=('HEADING', 'ALTITUDE'),
+                    help="override the world's sun direction, for renders made after the sun was moved")
+    # 0x1001a100 fades the cloud dimming in over the atmosphere step. The MountainTop include predates the
+    # sky work and was validated with the cloud depth instead; this keeps it rendering as before.
+    ap.add_argument('--cloud-fade-depth', action='store_true',
+                    help='fade the cloud dimming over the cloud depth instead of the atmosphere step')
     args = ap.parse_args()
 
     world = read_tgw(args.tgw)
@@ -115,14 +215,21 @@ def main():
     cam = [wldg.f32('CAMX'), wldg.f32('CAMY'), wldg.f32('CAMZ')]
     heading = math.degrees(math.atan2(wldg.f32('TARX') - cam[0], wldg.f32('TARY') - cam[1]))
     exposure = args.exposure if args.exposure is not None else wldg.f32('EXPO', 1.0)
-    clouds_dim = 1.0 if cldl and lita.f32('CCST') == 0.0 else 0.0
+    sun_heading, sun_altitude = args.sun if args.sun else (sun.f32('HEAD'), sun.f32('ALT '))
+    cloud_depth = cldl.f32('DEPT') if cldl else 0.0
+    cloud_fade = cloud_depth if args.cloud_fade_depth else atmosphere_step(world, ter)
     name = args.name
+    atmos = atmosphere_fields(world, ter, args.sun_path_scale, sun_altitude)
+    sky = sky_fields(world, ter, args.cloud_samples)
 
     L = []
     w = L.append
     w(f'// Generated by Tools/tgw_to_ush.py from {os.path.basename(args.tgw)} and {os.path.basename(args.terrain_json)}.')
     w('// Re-run the tool instead of editing this file.')
     w(f'// sun scale {args.sun_scale}, ambient scale {args.ambient_scale}, exposure {exposure:.6g}')
+    if args.sun:
+        w(f'// Sun moved to heading {sun_heading:g}, altitude {sun_altitude:g} (the world file has '
+          f'{sun.f32("HEAD"):g}, {sun.f32("ALT "):g}).')
     if args.sun_scale != [1.0, 1.0, 1.0] or args.ambient_scale != [1.0, 1.0, 1.0]:
         w('// The light scales were fitted against a Terragen render (compare.py --calibrate).')
     guard = f'TERRAGEN_WORLD_{name.upper()}_USH'
@@ -144,8 +251,8 @@ def main():
     w(f'\tW.Terrain.MaxHeight = {f(ter["max_height"])};')
     w(f'\tW.Terrain.PlanetRadius = {f(planet_radius)};')
     w(f'\tW.Detail = {f(wldg.f32("LDET", 1.0))};')
-    w(f'\tW.SunHeading = {f(sun.f32("HEAD"))};')
-    w(f'\tW.SunAltitude = {f(sun.f32("ALT "))};')
+    w(f'\tW.SunHeading = {f(sun_heading)};')
+    w(f'\tW.SunAltitude = {f(sun_altitude)};')
     w(f'\tW.SunDiameter = {f(sun.f32("DIAM", 1.0))};')
     w(f'\tW.SunColour = {f3(sun_colour)};')
     w(f'\tW.LandShadows = {f(ligt.f32("LCST", 1.0))};')
@@ -154,10 +261,12 @@ def main():
     w(f'\tW.AmbientUp = {f3(up if method == 1 else zero)};')
     w(f'\tW.AmbientAway = {f3(side if method == 1 else zero)};')
     w(f'\tW.AmbientSun = {f3(side if method == 1 else zero)};')
-    w(f'\tW.CloudsPresent = {f(clouds_dim)};')
+    w(f'\tW.CloudsPresent = {f(1.0 if cldl else 0.0)};')
     w(f'\tW.CloudAltitude = {f(cldl.f32("ALT ") if cldl else 0.0)};')
-    w(f'\tW.CloudDepth = {f(cldl.f32("DEPT") if cldl else 0.0)};')
+    w(f'\tW.CloudDepth = {f(cloud_depth)};')
     w(f'\tW.CloudSunlight = {f(1.0 - lita.f32("CLDS"))};')
+    w(f'\tW.CloudFade = {f(cloud_fade)};')
+    w(f'\tW.CloudShadows = {f(1.0 if cldl and lita.f32("CCST") != 0.0 else 0.0)};')
     w('\tW.WaterPresent = 1.0;')
     w(f'\tW.WaterLevel = {f(watr.f32("LEVL"))};')
     w(f'\tW.WaterColour = {f3(watr.colour("DIFC"))};')
@@ -166,6 +275,15 @@ def main():
     w(f'\tW.Exposure = {f(exposure)};')
     w('\tW.BumpTerrainValue = 0.25;')
     w('\tW.BackgroundColour = float3(0.0, 0.0, 0.0);')
+    maxr, minr = watr.f32('MAXR'), watr.f32('MINR')
+    w(f'\tW.WaterReflectivity = {f(1.0 if maxr > minr else 0.0)};')
+    w(f'\tW.WaterReflMinAngle = {f(minr)};')
+    w(f'\tW.WaterReflMaxAngle = {f(maxr)};')
+    w(f'\tW.WaterReflCurve = {f(watr.f32("RCRV", 1.0))};')
+    for key, value in atmos.items():
+        w(f'\tW.Atmos.{key} = {f3(value) if isinstance(value, (list, tuple)) else f(value)};')
+    for key, value in sky.items():
+        w(f'\tW.Sky.{key} = {f(value)};')
     w(f'\tW.NumLayers = {len(layers)};')
     for i in range(MAX_LAYERS):
         ly = layers[i] if i < len(layers) else None
