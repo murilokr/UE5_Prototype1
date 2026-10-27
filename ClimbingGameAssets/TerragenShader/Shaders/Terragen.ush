@@ -1,0 +1,804 @@
+// Terragen.ush - Terragen 0.9.43's terrain renderer, rebuilt as HLSL functions.
+//
+// The maths follows the decompiled Terragen.dll (addresses below refer to the unpacked DLL).
+// Terragen rasterises micro-polygons; here each pixel ray-marches the same surface instead, which
+// finds the same visible point. Everything after visibility (surface layers, bump, light, shadows,
+// tone curve) uses Terragen's own formulas and constants.
+//
+// Coordinates are Terragen's: x and y in grid points (0..Cells), z in terrain units, where one unit is
+// also one grid step (scale_m metres, from the .ter). +z is up; heading 0 looks along +y, 90 along +x.
+//
+// Not covered yet: the atmosphere (haze/blue/red layers), the sky dome and clouds, water reflections
+// and waves. The world these renders target has the atmosphere at zero and the sky turned off.
+//
+// This file is also compiled as C++ by Tests/tg_render.cpp (through Tests/hlsl_shim.h), so it sticks
+// to a shared subset: no swizzles, no out/inout parameters, float literals written as floats. Include
+// guards rather than #pragma once, which FXC (D3D11 SM5) doesn't understand.
+
+#ifndef TERRAGEN_USH
+#define TERRAGEN_USH
+
+#ifndef TG_LOOP
+#define TG_LOOP [loop]
+#endif
+
+#define TG_MAX_LAYERS 8
+#define TG_MAX_DEPTH 4
+#define TG_MAX_LEVELS 24
+
+static const float TG_DEG = 0.0174532925;
+
+struct TGTerrain
+{
+	int Cells;            // grid cells per side (points - 1); must be a power of two
+	int CellsLog2;
+	float BaseHeight;     // .ter ALTW BaseHeight
+	float HeightScale;    // .ter ALTW HeightScale
+	float MinHeight;      // lowest and highest elevation, for ray bounds and shadow early-outs
+	float MaxHeight;
+	float PlanetRadius;   // in grid units; 0 = flat (Terragen curves the terrain when the .ter asks)
+};
+
+// One surface layer (Terragen's "surface map" tree). Layer 0 is the root; Parent indexes another layer.
+// Layers are listed depth first, so children always come after their parent.
+struct TGLayer
+{
+	int Parent;
+	float3 Colour;        // DIFC / 256
+	float BumpAmount;     // BMAM
+	float BumpTerrainMod; // MTER
+	float2 BumpOrigin;    // BMTX/SETT ORIG
+	float BumpNegate;     // BMTX/SETT NEGA
+	float BumpIsol;       // BMTX/SETT ISOL
+	float BumpVari;       // BMTX/SETT VARI
+	float HasNoise;       // 1 when the layer has fractal-noise breakup (DENS/VART)
+	float2 NoiseOrigin;   // DENS/VART/SETT ORIG
+	float Variation;      // DENS VARI
+	float Coverage;       // COVR
+	float2 AltEnable;     // ALTE (min, max)
+	float2 AltLimit;      // ALTL, terrain units
+	float2 AltFuzz;       // ALTF
+	float2 SlopeEnable;   // SLPE
+	float2 SlopeLimit;    // SLPL, tan(angle)
+	float2 SlopeFuzz;     // SLPF
+	float SmallestSize;   // SMSZ
+};
+
+struct TGWorld
+{
+	TGTerrain Terrain;
+	float Detail;               // LDET
+	float SunHeading;           // degrees
+	float SunAltitude;          // degrees
+	float SunDiameter;          // degrees
+	float3 SunColour;           // light colour * strength, linear
+	float LandShadows;          // LCST
+	float3 Ambient;             // "single colour" background light
+	float3 AmbientUp;           // "multi-directional" terms
+	float3 AmbientAway;
+	float3 AmbientSun;
+	float CloudsPresent;
+	float CloudAltitude;        // terrain units
+	float CloudDepth;
+	float CloudSunlight;        // sunlight left under the cloud layer when clouds don't cast real shadows
+	float WaterPresent;
+	float WaterLevel;
+	float3 WaterColour;
+	int ToneMode;               // EXME: 0 gamma, 1 film, 2 smooth film
+	float Gamma;                // GAMA
+	float Exposure;             // multiplies linear colour before the tone curve
+	float BumpTerrainValue;     // stand-in for a per-point map the bump amplitude reads (see TG_BumpAmplitude)
+	float3 BackgroundColour;    // shown where no terrain is hit (the sky is not rendered yet)
+	int NumLayers;
+	TGLayer Layers[TG_MAX_LAYERS];
+};
+
+struct TGSunInfo
+{
+	float3 Dir;      // towards the sun
+	float SinHead;
+	float CosHead;
+	float SinAlt;
+	float TanLow;    // tangent of the altitude of the sun disc's lower edge
+	float TanHigh;   // ... and its upper edge
+};
+
+struct TGHit
+{
+	int Kind;        // 0 none, 1 terrain, 2 water
+	float T;         // ray parameter (distance when the direction is normalised)
+	float3 P;
+};
+
+struct TGShadeResult
+{
+	float3 Linear;   // radiance before exposure and tone curve
+	float Alpha;     // 1 where terrain or water was hit
+	float3 Albedo;   // surface colour from the layer tree
+	float SunTerm;   // sunlight factor: cloud dimming * (1 - shadow) * max(N.L, 0)
+	float NdotL;     // shading normal against the sun direction
+	float NormalZ;   // shading normal's up component
+	float Distance;  // along the ray, in grid units
+	int Kind;
+};
+
+// ---------------------------------------------------------------- heightfield
+
+float TG_GridHeight(Texture2D HeightTex, TGTerrain T, int x, int y)
+{
+	x = clamp(x, 0, T.Cells);
+	y = clamp(y, 0, T.Cells);
+	float texel = floor(HeightTex.Load(int3(x, y, 0)).x * 65535.0 + 0.5);
+	float h = T.BaseHeight + (texel - 32768.0) * T.HeightScale / 65536.0;
+	if (T.PlanetRadius > 0.0)
+	{
+		// ReceiveRender (0x1002b1f0): h -= R - sqrt(R^2 - d^2), d measured from the grid centre.
+		float dx = (float)(x - T.Cells / 2);
+		float dy = (float)(y - T.Cells / 2);
+		h -= T.PlanetRadius - sqrt(T.PlanetRadius * T.PlanetRadius - (dx * dx + dy * dy));
+	}
+	return h;
+}
+
+// Two triangles per cell, split on the (1,0)-(0,1) diagonal (0x10032940).
+float TG_TerrainHeight(Texture2D HeightTex, TGTerrain T, float x, float y)
+{
+	int ix = clamp((int)floor(x), 0, T.Cells - 1);
+	int iy = clamp((int)floor(y), 0, T.Cells - 1);
+	float fx = x - (float)ix;
+	float fy = y - (float)iy;
+	float h10 = TG_GridHeight(HeightTex, T, ix + 1, iy);
+	float h01 = TG_GridHeight(HeightTex, T, ix, iy + 1);
+	float h = 0.0;
+	if (fx + fy > 1.0)
+	{
+		float h11 = TG_GridHeight(HeightTex, T, ix + 1, iy + 1);
+		h = (1.0 - fy) * (h10 - h11) + (1.0 - fx) * (h01 - h11) + h11;
+	}
+	else
+	{
+		float h00 = TG_GridHeight(HeightTex, T, ix, iy);
+		h = h00 + (h10 - h00) * fx + (h01 - h00) * fy;
+	}
+	return h;
+}
+
+// ---------------------------------------------------------------- noise
+
+// (2^k * a) mod 128, keeping precision when 2^k * a is far beyond float's exact range.
+float TG_Pow2Mod128(float a, int k)
+{
+	float ia = floor(a);
+	float fa = a - ia;
+	float im = 0.0;
+	if (k < 0)
+	{
+		float period = 128.0 * exp2((float)(-k));
+		im = (ia - period * floor(ia / period)) * exp2((float)k);
+	}
+	else if (k < 7)
+	{
+		im = (float)((((int)(ia - 128.0 * floor(ia / 128.0))) << k) & 127);
+	}
+	float fm = fa * exp2((float)k);
+	return im + fm - 128.0 * floor(fm / 128.0);
+}
+
+// Coordinate of one noise octave: 2^kp * p + 2^ko * o, wrapped to the 128-point lattice.
+float TG_OctaveCoord(float p, int kp, float o, int ko)
+{
+	float c = TG_Pow2Mod128(p, kp) + TG_Pow2Mod128(o, ko);
+	return c - 128.0 * floor(c / 128.0);
+}
+
+float TG_Lattice(Texture2D NoiseTex, int x, int y)
+{
+	return floor(NoiseTex.Load(int3(x & 127, y & 127, 0)).x * 65535.0 + 0.5) / 32767.0 - 0.5;
+}
+
+// Value noise with smoothstep interpolation, period 128 (0x1001fc30).
+float TG_Noise(Texture2D NoiseTex, float x, float y)
+{
+	float x0 = floor(x);
+	float y0 = floor(y);
+	int ix = (int)x0;
+	int iy = (int)y0;
+	float fx = x - x0;
+	float fy = y - y0;
+	float sx = (3.0 - 2.0 * fx) * fx * fx;
+	float sy = (3.0 - 2.0 * fy) * fy * fy;
+	float a = lerp(TG_Lattice(NoiseTex, ix, iy), TG_Lattice(NoiseTex, ix + 1, iy), sx);
+	float b = lerp(TG_Lattice(NoiseTex, ix, iy + 1), TG_Lattice(NoiseTex, ix + 1, iy + 1), sx);
+	return lerp(a, b, sy);
+}
+
+// GradxNoise / GradyNoise (0x100201f0, 0x10020240): central differences with eps 0.005.
+float2 TG_NoiseGradient(Texture2D NoiseTex, float x, float y)
+{
+	float gx = (TG_Noise(NoiseTex, x + 0.005, y) - TG_Noise(NoiseTex, x - 0.005, y)) * 100.0;
+	float gy = (TG_Noise(NoiseTex, x, y + 0.005) - TG_Noise(NoiseTex, x, y - 0.005)) * 100.0;
+	return float2(gx, gy);
+}
+
+// Fractal sum of equal-amplitude octaves (0x10020290). Octave i samples 2^(kp+i) * p + 2^(ko+i) * o;
+// the octave count is trunc(log2(Limit) + 0.01) + 1.
+float TG_Fractal(Texture2D NoiseTex, float2 p, int kp, float2 o, int ko, float Limit)
+{
+	if (Limit <= 0.0)
+	{
+		return 0.0;
+	}
+	int n = min((int)(log2(Limit) + 0.01), 30);
+	float sum = 0.0;
+	TG_LOOP for (int i = 0; i <= n; i++)
+	{
+		sum += TG_Noise(NoiseTex, TG_OctaveCoord(p.x, kp + i, o.x, ko + i), TG_OctaveCoord(p.y, kp + i, o.y, ko + i));
+	}
+	return sum;
+}
+
+uint TG_Pcg(uint v)
+{
+	uint state = v * 747796405u + 2891336453u;
+	uint word = ((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u;
+	return (word >> 22u) ^ word;
+}
+
+// White noise in [0, 1) from a position; stands in for Terragen's hashed table (0x1001eb50).
+float TG_Hash01(float x, float y, uint seed)
+{
+	uint qx = (uint)(int)floor(x * 4096.0);
+	uint qy = (uint)(int)floor(y * 4096.0);
+	return (float)(TG_Pcg(qx ^ TG_Pcg(qy ^ TG_Pcg(seed))) & 0xFFFFFFu) / 16777216.0;
+}
+
+// ---------------------------------------------------------------- surface layers
+
+float TG_Sigmoid(float v)
+{
+	return 1.0 / (exp(-clamp(v, -100.0, 100.0)) + 1.0);
+}
+
+// Soft penalty outside one limit: -exp(distance past the limit / fuzz), or a hard cut when fuzz <= 0.
+float TG_LimitPenalty(float value, float limit, float fuzz, bool isMax)
+{
+	float past = isMax ? value - limit : limit - value;
+	if (fuzz <= 0.0)
+	{
+		return past > 0.0 ? -10000.0 : 0.0;
+	}
+	return -exp(min(past / fuzz, 80.0));
+}
+
+// Layer coverage (0x10026a20). Returns (coverage, detail size used to pick the next bump level).
+float2 TG_Coverage(TGLayer Ly, Texture2D NoiseTex, int CellsLog2, float2 p, float h, float2 grad, float footprint)
+{
+	// The slope measure is |gradient| = tan(slope angle), the unit SLPL is stored in.
+	float slope = sqrt(grad.x * grad.x + grad.y * grad.y);
+	float pen = 0.0;
+	if (Ly.AltEnable.x != 0.0)   { pen += TG_LimitPenalty(h, Ly.AltLimit.x, Ly.AltFuzz.x, false); }
+	if (Ly.AltEnable.y != 0.0)   { pen += TG_LimitPenalty(h, Ly.AltLimit.y, Ly.AltFuzz.y, true); }
+	if (Ly.SlopeEnable.x != 0.0) { pen += TG_LimitPenalty(slope, Ly.SlopeLimit.x, Ly.SlopeFuzz.x, false); }
+	if (Ly.SlopeEnable.y != 0.0) { pen += TG_LimitPenalty(slope, Ly.SlopeLimit.y, Ly.SlopeFuzz.y, true); }
+
+	float noise = 0.0;
+	if (Ly.HasNoise != 0.0)
+	{
+		// Noise coordinates are position / terrain size + origin; octaves stop at a quarter footprint.
+		float limit = 4.0 * exp2((float)CellsLog2) / footprint;
+		noise = TG_Fractal(NoiseTex, p, -CellsLog2, Ly.NoiseOrigin, 0, limit) * Ly.Variation;
+	}
+	float base = (Ly.HasNoise * Ly.Variation + 1.0) * (Ly.Coverage + pen - 0.5);
+	float cov = TG_Sigmoid((noise + 2.0 * base) * 4.0);
+	float detail = cov >= 1.0 - exp(-4.0) ? Ly.SmallestSize : log(1.0 - cov) * Ly.SmallestSize * -0.25;
+	return float2(cov, detail);
+}
+
+// Bump amplitude (0x10025d70). Terragen scales it by ((m - 0.25) * MTER + 0.25), where m comes from a
+// per-point map in the heightfield object that hasn't been identified; World.BumpTerrainValue stands in.
+float TG_BumpAmplitude(TGWorld W, TGLayer Ly, Texture2D NoiseTex, float2 p, float footprint)
+{
+	float amp = ((W.BumpTerrainValue - 0.25) * Ly.BumpTerrainMod + 0.25) * Ly.BumpAmount;
+	float limit = 1.0 / footprint;
+	if (Ly.BumpIsol != 0.0)
+	{
+		float f = TG_Fractal(NoiseTex, p, 0, Ly.BumpOrigin, 0, limit);
+		amp *= 2.0 * TG_Sigmoid((f * Ly.BumpIsol + 0.125) * 4.0);
+	}
+	if (Ly.BumpVari > 0.0)
+	{
+		float f = TG_Fractal(NoiseTex, p, 0, Ly.BumpOrigin + float2(20.0, 30.0), 0, limit);
+		amp *= 2.0 * TG_Sigmoid((f * Ly.BumpVari + 0.125) * 4.0);
+	}
+	return Ly.BumpNegate != 0.0 ? -amp : amp;
+}
+
+// Bump gradient of one level: level k samples noise at frequency 2^(k-4) per grid step.
+float2 TG_BumpOctave(Texture2D NoiseTex, TGLayer Ly, float2 p, int k, float amp)
+{
+	float cx = TG_OctaveCoord(p.x, k - 4, Ly.BumpOrigin.x, k - 4);
+	float cy = TG_OctaveCoord(p.y, k - 4, Ly.BumpOrigin.y, k - 4);
+	return TG_NoiseGradient(NoiseTex, cx, cy) * amp;
+}
+
+struct TGSurface
+{
+	float3 Colour;
+	float2 Grad;     // terrain gradient plus bump, in height units per grid step
+};
+
+// The surface-layer tree (0x10026370), evaluated without recursion. Each layer adds its own bump octaves
+// to a copy of its parent's per-level gradients, starting at a level chosen from its coverage detail;
+// the result is blended back into the parent by the layer's coverage.
+TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float x, float y, float2 grad0, float footprint)
+{
+	// Coverage and bump are sampled at a point jittered by up to one footprint, as Terragen does.
+	float2 pj = float2(x + TG_Hash01(x, y, 1u) * footprint, y + TG_Hash01(x, y, 2u) * footprint);
+	float hj = TG_TerrainHeight(HeightTex, W.Terrain, pj.x, pj.y);
+	int levels = clamp(max(4, (int)(log2(1.0 / footprint) + 0.01) + 6), 4, TG_MAX_LEVELS - 1);
+
+	float2 G[TG_MAX_DEPTH][TG_MAX_LEVELS];
+	float3 C[TG_MAX_DEPTH];
+	float Cov[TG_MAX_DEPTH];
+	int Node[TG_MAX_DEPTH];
+	int Next[TG_MAX_DEPTH];
+	int Level[TG_MAX_DEPTH];
+
+	TG_LOOP for (int k0 = 0; k0 <= levels; k0++)
+	{
+		G[0][k0] = grad0;
+	}
+	C[0] = W.Layers[0].Colour;
+	Cov[0] = 1.0;
+	Node[0] = 0;
+	Next[0] = 1;
+	Level[0] = 4;
+	int d = 0;
+	bool pushed = true;
+
+	TG_LOOP for (int iter = 0; iter < 2 * TG_MAX_LAYERS + 2; iter++)
+	{
+		if (pushed)
+		{
+			// Apply this layer's bump, starting at its level Lb (blend weights from 0x10025d70 with t = 0).
+			TGLayer Ly = W.Layers[Node[d]];
+			int lb = Level[d];
+			if (Ly.BumpAmount != 0.0 && lb - 2 <= levels)
+			{
+				float amp = TG_BumpAmplitude(W, Ly, NoiseTex, pj, footprint);
+				TG_LOOP for (int k = lb - 2; k <= levels; k++)
+				{
+					float2 n = TG_BumpOctave(NoiseTex, Ly, pj, k, amp);
+					float2 prev = G[d][max(k - 1, 0)];
+					if (k == lb - 2)      { G[d][k] = G[d][k] * 0.8 + (n + prev) * 0.2; }
+					else if (k == lb - 1) { G[d][k] = G[d][k] * 0.4 + (n + prev) * 0.6; }
+					else                  { G[d][k] = n + prev; }
+				}
+			}
+			pushed = false;
+		}
+
+		int child = -1;
+		TG_LOOP for (int j = Next[d]; j < W.NumLayers; j++)
+		{
+			if (W.Layers[j].Parent == Node[d])
+			{
+				child = j;
+				break;
+			}
+		}
+
+		if (child >= 0)
+		{
+			Next[d] = child + 1;
+			if (d + 1 >= TG_MAX_DEPTH)
+			{
+				continue;
+			}
+			TGLayer Cl = W.Layers[child];
+			// First pass at a coarse footprint picks which gradient level the slope test sees.
+			float coarse = min(max(footprint, Cl.SmallestSize), 1.0);
+			int lvl = clamp((int)log2(1.1 / coarse) + 4, 4, levels);
+			float2 c1 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pj, hj, G[d][lvl], coarse);
+			int lvl2 = c1.y <= 0.0 ? levels : clamp((int)log2(1.1 / c1.y) + 4, 4, levels);
+			float2 c2 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pj, hj, G[d][lvl2], footprint);
+			int childLevel = c2.y <= 0.0 ? levels + 4 : clamp((int)log2(1.1 / c2.y) + 4, 4, levels + 4);
+
+			TG_LOOP for (int k1 = 0; k1 <= levels; k1++)
+			{
+				G[d + 1][k1] = G[d][k1];
+			}
+			d = d + 1;
+			Node[d] = child;
+			Next[d] = child + 1;
+			Cov[d] = c2.x;
+			C[d] = Cl.Colour;
+			Level[d] = childLevel;
+			pushed = true;
+		}
+		else
+		{
+			if (d == 0)
+			{
+				break;
+			}
+			float c = Cov[d];
+			C[d - 1] = lerp(C[d - 1], C[d], c);
+			TG_LOOP for (int k2 = 0; k2 <= levels; k2++)
+			{
+				G[d - 1][k2] = lerp(G[d - 1][k2], G[d][k2], c);
+			}
+			d = d - 1;
+		}
+	}
+
+	TGSurface S;
+	S.Colour = C[0];
+	S.Grad = G[0][levels];
+	return S;
+}
+
+// ---------------------------------------------------------------- light and shadow
+
+TGSunInfo TG_MakeSun(TGWorld W)
+{
+	float head = W.SunHeading * TG_DEG;
+	float alt = W.SunAltitude * TG_DEG;
+	float r = W.SunDiameter * 0.008726646;   // ReceiveLighting (0x1002ada0): radius = diameter * pi / 360
+	TGSunInfo S;
+	S.SinHead = sin(head);
+	S.CosHead = cos(head);
+	S.SinAlt = sin(alt);
+	S.Dir = float3(cos(alt) * S.SinHead, cos(alt) * S.CosHead, S.SinAlt);
+	S.TanLow = tan(alt - r);
+	S.TanHigh = tan(alt + r);
+	return S;
+}
+
+// Soft terrain shadow (0x1002cc50): march grid line by grid line towards the sun with rays aimed at the
+// lower and upper edge of the sun disc. Returns 0 (lit) .. 1 (fully hidden).
+float TG_SunShadow(Texture2D HeightTex, TGTerrain T, TGSunInfo S, float x, float y, float h)
+{
+	if (S.SinAlt > 0.9999)
+	{
+		return 0.0;
+	}
+	bool yMajor = abs(S.SinHead) <= abs(S.CosHead);
+	float major = yMajor ? S.CosHead : S.SinHead;
+	float minorStep = yMajor ? S.SinHead / S.CosHead : S.CosHead / S.SinHead;
+	float lowStep = S.TanLow / abs(major);
+	float highStep = S.TanHigh / abs(major);
+	float dir = major >= 0.0 ? 1.0 : -1.0;
+	float a = yMajor ? y : x;
+	float b = yMajor ? x : y;
+	float n = (float)T.Cells;
+
+	float dt = major >= 0.0 ? floor(a) + 1.0 - a : a - floor(a);
+	a += dir * dt;
+	b += dir * dt * minorStep;
+	float zLow = h + dt * lowStep;
+	float zHigh = h + dt * highStep;
+	float s = 0.0;
+	TG_LOOP for (int i = 0; i <= T.Cells + 1; i++)
+	{
+		if (a < 0.0 || a > n || b < 0.0 || b > n)
+		{
+			break;
+		}
+		if ((lowStep > 0.0 && zLow > T.MaxHeight) || (highStep < 0.0 && zHigh < T.MinHeight))
+		{
+			break;
+		}
+		float H = yMajor ? TG_TerrainHeight(HeightTex, T, b, a) : TG_TerrainHeight(HeightTex, T, a, b);
+		if (zLow < H)
+		{
+			if (zHigh < H)
+			{
+				return 1.0;
+			}
+			s = max(s, (H - zLow) / (zHigh - zLow));
+		}
+		a += dir;
+		b += dir * minorStep;
+		zLow += lowStep;
+		zHigh += highStep;
+	}
+	return s;
+}
+
+// With "clouds cast shadows" off, points under the cloud layer get a uniform dimming (0x1001a100).
+float TG_CloudSunFactor(TGWorld W, float h)
+{
+	if (W.CloudsPresent == 0.0 || W.CloudDepth <= 0.0)
+	{
+		return 1.0;
+	}
+	float w = saturate((W.CloudAltitude - h) / W.CloudDepth + 0.5);
+	return 1.0 - (1.0 - W.CloudSunlight) * w;
+}
+
+// Light at a point (0x1001b710 with 0x1002d2a0): the sun through a smoothstepped shadow, plus a constant
+// ambient and three wrap-around ambient terms (sun side, away side, sky above).
+float3 TG_Light(TGWorld W, TGSunInfo S, float3 N, float sunFactor)
+{
+	float ndl = dot(N, S.Dir);
+	float wrapSun = max((ndl + 1.0) * 0.5, 0.0);
+	float wrapAway = max((1.0 - ndl) * 0.5, 0.0);
+	float wrapUp = max((N.z + 1.0) * 0.5, 0.0);
+	return W.SunColour * sunFactor + W.AmbientSun * wrapSun + W.AmbientAway * wrapAway + W.AmbientUp * wrapUp + W.Ambient;
+}
+
+// ---------------------------------------------------------------- tone curve
+
+// Terragen's display conversion (RGBm 0x10028aa0, buffer pass 0x10028ea0), from linear (1.0 ~ white)
+// to display 0..1. Modes match the world file's EXME.
+float TG_ToneChannel(float x, int mode, float gamma)
+{
+	float invGamma = 1.0 / gamma;
+	if (x <= 0.0)
+	{
+		return 0.0;
+	}
+	if (mode == 0)
+	{
+		return saturate(pow(x, invGamma));
+	}
+	if (x * 256.0 > 1023.0)
+	{
+		return 1.0;
+	}
+	if (mode == 1)
+	{
+		return pow(1.0 - exp(-1.9 * x), invGamma);
+	}
+	return pow(sqrt(1.0 - exp(-1.38 * x * x)), invGamma);
+}
+
+float3 TG_ToneMap(TGWorld W, float3 c)
+{
+	c = c * W.Exposure;
+	return float3(TG_ToneChannel(c.x, W.ToneMode, W.Gamma), TG_ToneChannel(c.y, W.ToneMode, W.Gamma), TG_ToneChannel(c.z, W.ToneMode, W.Gamma));
+}
+
+// ---------------------------------------------------------------- visibility
+
+// Exact intersection with one cell's two triangles over the ray interval [t0, t1]; returns -1 for no hit.
+float TG_CellHit(Texture2D HeightTex, TGTerrain T, int ix, int iy, float3 O, float3 D, float t0, float t1)
+{
+	float h00 = TG_GridHeight(HeightTex, T, ix, iy);
+	float h10 = TG_GridHeight(HeightTex, T, ix + 1, iy);
+	float h01 = TG_GridHeight(HeightTex, T, ix, iy + 1);
+	float h11 = TG_GridHeight(HeightTex, T, ix + 1, iy + 1);
+	float cx = (float)ix;
+	float cy = (float)iy;
+	// The diagonal fx + fy = 1 splits the interval in two; each part lies on one triangle's plane.
+	float s0 = (O.x - cx) + (O.y - cy);
+	float s1 = D.x + D.y;
+	float tSplit = abs(s1) > 1e-12 ? (1.0 - s0) / s1 : -1.0;
+	float tA = t0;
+	TG_LOOP for (int part = 0; part < 2; part++)
+	{
+		float tB = t1;
+		if (part == 0 && tSplit > t0 && tSplit < t1)
+		{
+			tB = tSplit;
+		}
+		float tm = 0.5 * (tA + tB);
+		bool upper = (s0 + s1 * tm) > 1.0;
+		float gA = 0.0;
+		float gB = 0.0;
+		TG_LOOP for (int e = 0; e < 2; e++)
+		{
+			float t = e == 0 ? tA : tB;
+			float fx = O.x + D.x * t - cx;
+			float fy = O.y + D.y * t - cy;
+			float hs = upper ? (1.0 - fy) * (h10 - h11) + (1.0 - fx) * (h01 - h11) + h11
+			                 : h00 + (h10 - h00) * fx + (h01 - h00) * fy;
+			float g = O.z + D.z * t - hs;
+			if (e == 0) { gA = g; } else { gB = g; }
+		}
+		if (gA <= 0.0)
+		{
+			return tA;
+		}
+		if (gB <= 0.0)
+		{
+			return tA + (tB - tA) * gA / (gA - gB);
+		}
+		if (tB >= t1)
+		{
+			break;
+		}
+		tA = tB;
+	}
+	return -1.0;
+}
+
+// Walk the cells the ray crosses (2D DDA) and return the first terrain or water hit.
+TGHit TG_Trace(TGWorld W, Texture2D HeightTex, float3 O, float3 D, float tStart)
+{
+	TGTerrain T = W.Terrain;
+	TGHit hit;
+	hit.Kind = 0;
+	hit.T = -1.0;
+	hit.P = O;
+
+	float n = (float)T.Cells;
+	float zLow = min(T.MinHeight, W.WaterPresent != 0.0 ? W.WaterLevel : T.MinHeight) - 0.01;
+	float zHigh = max(T.MaxHeight, W.WaterPresent != 0.0 ? W.WaterLevel : T.MaxHeight) + 0.01;
+	float t0 = tStart;
+	float t1 = 1e30;
+	// Clip the ray to the terrain's bounding box.
+	float3 lo = float3(0.0, 0.0, zLow);
+	float3 hi = float3(n, n, zHigh);
+	TG_LOOP for (int axis = 0; axis < 3; axis++)
+	{
+		float o = axis == 0 ? O.x : (axis == 1 ? O.y : O.z);
+		float dd = axis == 0 ? D.x : (axis == 1 ? D.y : D.z);
+		float l = axis == 0 ? lo.x : (axis == 1 ? lo.y : lo.z);
+		float h = axis == 0 ? hi.x : (axis == 1 ? hi.y : hi.z);
+		if (abs(dd) < 1e-12)
+		{
+			if (o < l || o > h) { return hit; }
+		}
+		else
+		{
+			float ta = (l - o) / dd;
+			float tb = (h - o) / dd;
+			t0 = max(t0, min(ta, tb));
+			t1 = min(t1, max(ta, tb));
+		}
+	}
+	if (t1 <= t0)
+	{
+		return hit;
+	}
+
+	// Water is a flat plane over the whole grid; the first of water and terrain wins.
+	float tWater = 1e30;
+	if (W.WaterPresent != 0.0 && D.z < 0.0 && O.z > W.WaterLevel)
+	{
+		tWater = (W.WaterLevel - O.z) / D.z;
+	}
+	float tEnd = min(t1, tWater);
+
+	float3 P = O + D * t0;
+	int ix = clamp((int)floor(P.x), 0, T.Cells - 1);
+	int iy = clamp((int)floor(P.y), 0, T.Cells - 1);
+	int stepX = D.x >= 0.0 ? 1 : -1;
+	int stepY = D.y >= 0.0 ? 1 : -1;
+	float tDeltaX = abs(D.x) > 1e-12 ? abs(1.0 / D.x) : 1e30;
+	float tDeltaY = abs(D.y) > 1e-12 ? abs(1.0 / D.y) : 1e30;
+	float tNextX = abs(D.x) > 1e-12 ? ((float)(ix + (stepX > 0 ? 1 : 0)) - O.x) / D.x : 1e30;
+	float tNextY = abs(D.y) > 1e-12 ? ((float)(iy + (stepY > 0 ? 1 : 0)) - O.y) / D.y : 1e30;
+	float tCur = t0;
+	TG_LOOP for (int i = 0; i < 4 * T.Cells + 4; i++)
+	{
+		float tExit = min(min(tNextX, tNextY), tEnd);
+		float th = TG_CellHit(HeightTex, T, ix, iy, O, D, tCur, tExit);
+		if (th >= 0.0)
+		{
+			hit.Kind = 1;
+			hit.T = th;
+			hit.P = O + D * th;
+			return hit;
+		}
+		if (tExit >= tEnd)
+		{
+			break;
+		}
+		tCur = tExit;
+		if (tNextX < tNextY)
+		{
+			ix += stepX;
+			tNextX += tDeltaX;
+		}
+		else
+		{
+			iy += stepY;
+			tNextY += tDeltaY;
+		}
+		if (ix < 0 || iy < 0 || ix >= T.Cells || iy >= T.Cells)
+		{
+			break;
+		}
+	}
+	if (tWater <= t1)
+	{
+		hit.Kind = 2;
+		hit.T = tWater;
+		hit.P = O + D * tWater;
+	}
+	return hit;
+}
+
+// ---------------------------------------------------------------- entry points
+
+// Shade one ray. O is in Terragen coordinates, D need not be normalised. PixelAngle is the angle one
+// pixel subtends (1 / focal length in pixels); it sets the detail footprint like Terragen's micro-polygon
+// size. StartDistance skips terrain closer than that many grid units.
+TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+{
+	D = normalize(D);
+	TGShadeResult R;
+	R.Linear = W.BackgroundColour;
+	R.Alpha = 0.0;
+	R.Albedo = float3(0.0, 0.0, 0.0);
+	R.SunTerm = 0.0;
+	R.NdotL = 0.0;
+	R.NormalZ = 1.0;
+	R.Distance = -1.0;
+	R.Kind = 0;
+
+	TGHit hit = TG_Trace(W, HeightTex, O, D, StartDistance);
+	if (hit.Kind == 0)
+	{
+		return R;
+	}
+	TGSunInfo S = TG_MakeSun(W);
+	float footprint = max(hit.T * PixelAngle / max(W.Detail, 0.01), 1e-4);
+	R.Alpha = 1.0;
+	R.Distance = hit.T;
+	R.Kind = hit.Kind;
+
+	if (hit.Kind == 2)
+	{
+		// Water: flat, no reflection or waves yet.
+		float3 N = float3(0.0, 0.0, 1.0);
+		float sunFactor = TG_CloudSunFactor(W, hit.P.z) * max(dot(N, S.Dir), 0.0);
+		R.Albedo = W.WaterColour;
+		R.SunTerm = sunFactor;
+		R.NdotL = S.Dir.z;
+		R.Linear = W.WaterColour * TG_Light(W, S, N, sunFactor);
+		return R;
+	}
+
+	float x = hit.P.x;
+	float y = hit.P.y;
+	// Base gradient from the heightfield at +-0.5 cell (0x1002d4e0).
+	float2 grad0 = float2(TG_TerrainHeight(HeightTex, W.Terrain, x + 0.5, y) - TG_TerrainHeight(HeightTex, W.Terrain, x - 0.5, y),
+	                      TG_TerrainHeight(HeightTex, W.Terrain, x, y + 0.5) - TG_TerrainHeight(HeightTex, W.Terrain, x, y - 0.5));
+	TGSurface surf = TG_SurfaceTree(W, HeightTex, NoiseTex, x, y, grad0, footprint);
+	float3 N = normalize(float3(-surf.Grad.x, -surf.Grad.y, 1.0));
+
+	float h = TG_TerrainHeight(HeightTex, W.Terrain, x, y);
+	float shadow = 0.0;
+	if (W.LandShadows != 0.0)
+	{
+		shadow = TG_SunShadow(HeightTex, W.Terrain, S, x, y, h);
+	}
+	float smoothShadow = shadow * shadow * (3.0 - 2.0 * shadow);
+	float sunFactor = TG_CloudSunFactor(W, h) * (1.0 - smoothShadow) * max(dot(N, S.Dir), 0.0);
+
+	R.Albedo = surf.Colour;
+	R.SunTerm = sunFactor;
+	R.NdotL = dot(N, S.Dir);
+	R.NormalZ = N.z;
+	R.Linear = surf.Colour * TG_Light(W, S, N, sunFactor);
+	return R;
+}
+
+// Display colour (Terragen's exposure and tone curve applied) and coverage alpha.
+float4 TG_RenderRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+{
+	TGShadeResult R = TG_ShadeRay(W, HeightTex, NoiseTex, O, D, PixelAngle, StartDistance);
+	float3 c = TG_ToneMap(W, R.Linear);
+	return float4(c.x, c.y, c.z, R.Alpha);
+}
+
+// Terragen's camera (0x1002c910, ReceiveRender): focal length = zoom * width / 2, heading measured from
+// +y towards +x, pitch up positive. Pixel is the pixel centre, row 0 at the top.
+float3 TG_CameraRay(float HeadingDeg, float PitchDeg, float Zoom, float2 Pixel, float2 ImageSize)
+{
+	float h = HeadingDeg * TG_DEG;
+	float p = PitchDeg * TG_DEG;
+	float3 F = float3(sin(h) * cos(p), cos(h) * cos(p), sin(p));
+	float3 Rt = float3(cos(h), -sin(h), 0.0);
+	float3 U = cross(Rt, F);
+	float focal = Zoom * ImageSize.x * 0.5;
+	float sx = (Pixel.x - ImageSize.x * 0.5) / focal;
+	float sy = (ImageSize.y * 0.5 - Pixel.y) / focal;
+	return F + Rt * sx + U * sy;
+}
+
+#endif // TERRAGEN_USH

@@ -1,0 +1,159 @@
+// TerragenUE.ush - glue between Terragen.ush and Unreal: the skybox cross atlas and coordinate conversion.
+//
+// The atlas uses exactly the layout of Scripts/GenerateSkyboxTexture.py, so a rendered atlas matches the
+// old Textures/MountainTop crosses pixel for pixel. With face size S the atlas is 4S x 4S:
+//   Back (0, 1.5S)  Left (S, 1.5S)  Front (2S, 1.5S)  Right (3S, 1.5S)   mirrored left-right
+//   Up   (S, 0.5S)  Down (S, 2.5S)                                       mirrored top-bottom
+// Faces look at AtlasHeading + 0/90/180/270 degrees (Front, Left, Back, Right); Up and Down use +270,
+// like GenSkyboxAnimation.tgs. Like Terragen.ush, this file also compiles as C++ for the test harness.
+
+#ifndef TERRAGEN_UE_USH
+#define TERRAGEN_UE_USH
+
+#include "Terragen.ush"
+
+struct TGAtlasFace
+{
+	float HeadingOffset;
+	float Pitch;
+	float2 Origin;    // top-left corner, in face sizes
+	bool MirrorX;
+	bool MirrorY;
+};
+
+// Face order: 0 Front, 1 Left, 2 Back, 3 Right, 4 Up, 5 Down.
+TGAtlasFace TG_GetAtlasFace(int i)
+{
+	TGAtlasFace F;
+	F.HeadingOffset = i < 4 ? 90.0 * (float)i : 270.0;
+	F.Pitch = i == 4 ? 90.0 : (i == 5 ? -90.0 : 0.0);
+	F.Origin = i == 0 ? float2(2.0, 1.5) : (i == 1 ? float2(1.0, 1.5) : (i == 2 ? float2(0.0, 1.5) :
+	           (i == 3 ? float2(3.0, 1.5) : (i == 4 ? float2(1.0, 0.5) : float2(1.0, 2.5)))));
+	F.MirrorX = i < 4;
+	F.MirrorY = i >= 4;
+	return F;
+}
+
+// Which face an atlas pixel position (in pixels, 0..4S) falls in, or -1.
+int TG_AtlasFaceAt(float2 p, float FaceSize)
+{
+	float fx = p.x / FaceSize;
+	float fy = p.y / FaceSize;
+	if (fy >= 1.5 && fy < 2.5)
+	{
+		return fx < 1.0 ? 2 : (fx < 2.0 ? 1 : (fx < 3.0 ? 0 : 3));
+	}
+	if (fx >= 1.0 && fx < 2.0)
+	{
+		if (fy >= 0.5 && fy < 1.5) { return 4; }
+		if (fy >= 2.5 && fy < 3.5) { return 5; }
+	}
+	return -1;
+}
+
+// Terragen view direction for an atlas UV (0..1); w = 0 outside the six faces.
+float4 TG_AtlasDirection(float2 UV, float AtlasHeading, float FaceSize)
+{
+	float2 p = UV * (4.0 * FaceSize);
+	int face = TG_AtlasFaceAt(p, FaceSize);
+	if (face < 0)
+	{
+		return float4(0.0, 0.0, 0.0, 0.0);
+	}
+	TGAtlasFace F = TG_GetAtlasFace(face);
+	float lx = p.x - F.Origin.x * FaceSize;
+	float ly = p.y - F.Origin.y * FaceSize;
+	if (F.MirrorX) { lx = FaceSize - lx; }
+	if (F.MirrorY) { ly = FaceSize - ly; }
+	float3 d = TG_CameraRay(AtlasHeading + F.HeadingOffset, F.Pitch, 1.0, float2(lx, ly), float2(FaceSize, FaceSize));
+	return float4(d.x, d.y, d.z, 1.0);
+}
+
+// Atlas UV for a Terragen view direction; the inverse of TG_AtlasDirection. Face-local coordinates are kept
+// half a pixel inside each face so bilinear filtering never reads the empty atlas area.
+float2 TG_AtlasUV(float3 Dir, float AtlasHeading, float FaceSize)
+{
+	int best = 0;
+	float bestDot = -2.0;
+	float3 bestF = float3(0.0, 1.0, 0.0);
+	float3 bestR = float3(1.0, 0.0, 0.0);
+	float3 bestU = float3(0.0, 0.0, 1.0);
+	float3 d = normalize(Dir);
+	TG_LOOP for (int i = 0; i < 6; i++)
+	{
+		TGAtlasFace F = TG_GetAtlasFace(i);
+		float h = (AtlasHeading + F.HeadingOffset) * TG_DEG;
+		float pt = F.Pitch * TG_DEG;
+		float3 fw = float3(sin(h) * cos(pt), cos(h) * cos(pt), sin(pt));
+		float k = dot(d, fw);
+		if (k > bestDot)
+		{
+			bestDot = k;
+			best = i;
+			bestF = fw;
+			bestR = float3(cos(h), -sin(h), 0.0);
+			bestU = cross(bestR, fw);
+		}
+	}
+	TGAtlasFace B = TG_GetAtlasFace(best);
+	float sx = dot(d, bestR) / bestDot;
+	float sy = dot(d, bestU) / bestDot;
+	float halfSize = FaceSize * 0.5;
+	float lx = clamp(sx * halfSize + halfSize, 0.5, FaceSize - 0.5);
+	float ly = clamp(halfSize - sy * halfSize, 0.5, FaceSize - 0.5);
+	if (B.MirrorX) { lx = FaceSize - lx; }
+	if (B.MirrorY) { ly = FaceSize - ly; }
+	return float2((B.Origin.x * FaceSize + lx) / (4.0 * FaceSize), (B.Origin.y * FaceSize + ly) / (4.0 * FaceSize));
+}
+
+// A camera following the player can end up below the Terragen ground, where every ray starts inside the
+// terrain. Inside the grid, lift it to at least Clearance units above the ground (or the water) under it.
+// A negative Clearance leaves the position alone.
+float3 TG_KeepAboveTerrain(TGWorld W, Texture2D HeightTex, float3 P, float Clearance)
+{
+	float n = (float)W.Terrain.Cells;
+	if (Clearance < 0.0 || P.x < 0.0 || P.y < 0.0 || P.x > n || P.y > n)
+	{
+		return P;
+	}
+	float ground = TG_TerrainHeight(HeightTex, W.Terrain, P.x, P.y);
+	if (W.WaterPresent != 0.0)
+	{
+		ground = max(ground, W.WaterLevel);
+	}
+	return float3(P.x, P.y, max(P.z, ground + Clearance));
+}
+
+// Render one atlas texel. Returns display colour (Terragen tone curve applied) and alpha (0 = sky or
+// outside the faces). Write it to an 8-bit linear (non-sRGB) target to get Terragen's bytes exactly.
+float4 TG_RenderAtlasTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float StartDistance, float Clearance)
+{
+	float4 d = TG_AtlasDirection(UV, AtlasHeading, FaceSize);
+	if (d.w == 0.0)
+	{
+		return float4(0.0, 0.0, 0.0, 0.0);
+	}
+	float3 eye = TG_KeepAboveTerrain(W, HeightTex, CameraPos, Clearance);
+	return TG_RenderRay(W, HeightTex, NoiseTex, eye, float3(d.x, d.y, d.z), 2.0 / FaceSize, StartDistance);
+}
+
+// Unreal (X forward, Y right, Z up) to Terragen (x right, y forward at heading 0, z up). HeadingAtPlusX is
+// the Terragen heading seen when looking along Unreal's +X.
+float3 TG_FromUEDirection(float3 UE, float HeadingAtPlusX)
+{
+	float h = HeadingAtPlusX * TG_DEG;
+	float x = UE.y;
+	float y = UE.x;
+	return float3(x * cos(h) + y * sin(h), -x * sin(h) + y * cos(h), UE.z);
+}
+
+// The atlas stores display values; decoding them as sRGB gives what sampling the old sRGB skybox textures did.
+float3 TG_SRGBToLinear(float3 c)
+{
+	float r = c.x <= 0.04045 ? c.x / 12.92 : pow(abs((c.x + 0.055) / 1.055), 2.4);
+	float g = c.y <= 0.04045 ? c.y / 12.92 : pow(abs((c.y + 0.055) / 1.055), 2.4);
+	float b = c.z <= 0.04045 ? c.z / 12.92 : pow(abs((c.z + 0.055) / 1.055), 2.4);
+	return float3(r, g, b);
+}
+
+#endif // TERRAGEN_UE_USH

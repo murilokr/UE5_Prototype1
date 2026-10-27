@@ -1,0 +1,6 @@
+# Compiled test renderer and DXC output
+Build/
+# Test renders, comparisons and per-pixel debug data (regenerate with Tests/tg_render + Tools/compare.py)
+Out/
+# Python bytecode
+__pycache__/

@@ -1,0 +1,13 @@
+{
+  "source": "prototype2_v2.ter",
+  "points": 513,
+  "cells": 512,
+  "scale_m": 15.0,
+  "base_height": 53,
+  "height_scale": 125,
+  "min_height": -8.605453491210938,
+  "max_height": 115.17765808105469,
+  "planet_radius_km": 6370.0,
+  "curved": 0,
+  "encoding": "height_units = base_height + (texel - 32768) * height_scale / 65536; 1 unit = scale_m metres"
+}

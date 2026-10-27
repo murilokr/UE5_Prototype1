@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.5",
+	"EngineAssociation": "{4B673A65-4B52-A28A-212D-F6B89F4F1886}",
 	"Category": "",
 	"Description": "",
 	"Modules": [
@@ -8,6 +8,11 @@
 			"Name": "Prototype1",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
+		},
+		{
+			"Name": "TerragenShaders",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
 		}
 	],
 	"Plugins": [
