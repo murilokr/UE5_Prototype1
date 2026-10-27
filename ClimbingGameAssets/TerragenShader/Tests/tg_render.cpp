@@ -119,6 +119,7 @@ int main(int argc, char** argv)
 	float heading = TG_WORLD_HEADING;
 	int size = 512;
 	bool atlasMode = false;
+	bool maskMode = false;
 	float clearance = -1.0f;
 	std::string faces = "Front,Left,Back,Right,Up,Down";
 	for (int i = 4; i < argc; i++)
@@ -129,6 +130,7 @@ int main(int argc, char** argv)
 		else if (!std::strcmp(argv[i], "--faces") && i + 1 < argc) { faces = argv[++i]; }
 		else if (!std::strcmp(argv[i], "--atlas")) { atlasMode = true; }
 		else if (!std::strcmp(argv[i], "--clearance") && i + 1 < argc) { clearance = (float)atof(argv[++i]); }
+		else if (!std::strcmp(argv[i], "--mask")) { maskMode = true; }
 		else { std::fprintf(stderr, "unknown option %s\n", argv[i]); return 1; }
 	}
 
@@ -161,6 +163,29 @@ int main(int argc, char** argv)
 
 	cam = TG_KeepAboveTerrain(W, HeightTex, cam, clearance);
 	std::printf("camera %.4f %.4f %.4f\n", cam.x, cam.y, cam.z);
+
+	if (maskMode)
+	{
+		// Visibility only, for camera searches: <Face>.mask holds one byte per pixel, 1 = terrain or water.
+		const Face all[] = {{"Front", 0, 0}, {"Left", 90, 0}, {"Back", 180, 0}, {"Right", 270, 0}, {"Up", 270, 90}, {"Down", 270, -90}};
+		for (const Face& face : all)
+		{
+			if (faces.find(face.Name) == std::string::npos) continue;
+			std::vector<uint8_t> m(size * size);
+			ParallelRows(size, [&](int y)
+			{
+				for (int x = 0; x < size; x++)
+				{
+					float3 dir = normalize(TG_CameraRay(heading + face.HeadingOffset, face.Pitch, 1.0f, float2(x + 0.5f, y + 0.5f), float2((float)size, (float)size)));
+					m[y * size + x] = TG_Trace(W, HeightTex, cam, dir, 0.0f).Kind != 0 ? 1 : 0;
+				}
+			});
+			FILE* f = std::fopen((outDir + "/" + face.Name + ".mask").c_str(), "wb");
+			std::fwrite(m.data(), 1, m.size(), f);
+			std::fclose(f);
+		}
+		return 0;
+	}
 
 	// The face set of GenSkyboxAnimation.tgs: front heading H, left H+90, back H+180, right H+270,
 	// up and down at H+270.
