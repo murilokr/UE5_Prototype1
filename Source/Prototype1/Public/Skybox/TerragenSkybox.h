@@ -11,6 +11,16 @@ class UStaticMeshComponent;
 class UTerragenWorld;
 class UTextureRenderTarget2D;
 
+/** How the terrain atlas, the picture the sky sphere shows, is laid out. */
+UENUM(BlueprintType)
+enum class ETerragenProjection : uint8
+{
+	/** Six cube faces in the old skyboxes' cross layout. Sharper towards the faces' edges than at their centres, with a seam along each cube edge. */
+	Cube,
+	/** One equirectangular sphere map, twice as wide as tall. Equally sharp all round the horizon and seamless; costs about a third more per frame. */
+	Sphere,
+};
+
 /**
  * A sky rendered live the way Terragen 0.9 renders terrain (ClimbingGameAssets/TerragenShader).
  *
@@ -33,6 +43,9 @@ class UTextureRenderTarget2D;
  * Which Terragen world is drawn comes from TerragenWorld (a UTerragenWorld asset, DA_TerragenWorld_<Name>): it
  * sets the materials and the placement below. Swap it in the details panel, or at run time with
  * SetTerragenWorld. Without one, the materials and placement are set here directly.
+ *
+ * The sphere (SkyMesh) only carries the picture: its material looks each pixel's view direction up in the
+ * terrain atlas, so the mesh's shape doesn't matter. Projection chooses the atlas's layout.
  */
 UCLASS(Blueprintable)
 class PROTOTYPE1_API ATerragenSkybox : public AActor
@@ -133,7 +146,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	TSoftObjectPtr<UMaterialInterface> DisplayMaterial;
 
-	/** Size of the terrain atlas in pixels, four faces wide; 2048 gives 512-pixel faces. */
+	/** Layout of the terrain atlas: cube faces, or a sphere map. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Quality")
+	ETerragenProjection Projection = ETerragenProjection::Cube;
+
+	/**
+	 * Width of the terrain atlas in pixels. Cube: four faces wide and as tall, 2048 giving 512-pixel faces.
+	 * Sphere: half as tall, 2048 giving 0.18 degrees per pixel.
+	 */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Quality", meta = (ClampMin = "256", ClampMax = "8192"))
 	int32 TerrainAtlasSize = 2048;
 
@@ -148,7 +168,7 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Quality", meta = (ClampMin = "0", ClampMax = "4096"))
 	int32 ReflectionAtlasSize = 512;
 
-	/** Terrain tiles per face side; 4 gives 16 tiles per face (128 pixels each at a 2048 atlas). */
+	/** Terrain tiles per face side; 4 gives 16 tiles per face (128 pixels each at a 2048 atlas). A sphere map uses tiles of the same size. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Quality", meta = (ClampMin = "1", ClampMax = "16"))
 	int32 TilesPerFaceSide = 4;
 
@@ -263,8 +283,9 @@ private:
 	void ResetDrawing();
 	bool EnsureMaterials();
 	bool MaterialsReady() const;
-	UTextureRenderTarget2D* CreateAtlas(int32 Size, bool FloatingPoint = false) const;
+	UTextureRenderTarget2D* CreateAtlas(int32 Size, bool FloatingPoint = false, bool SphereMap = false) const;
 	void BuildTiles(FAtlasState& State, int32 AtlasSize, int32 TilesPerSide) const;
+	void BuildSphereTiles(FAtlasState& State, int32 AtlasWidth, int32 TilesPerFace) const;
 	FVector TerragenViewDirection(const FRotator& ViewRotation) const;
 	static double ViewHalfAngle(float FieldOfView, float AspectRatio);
 	TArray<int32> PickTiles(const FAtlasState& State, const FVector& Camera, double Threshold, const FVector& ViewDir, double HalfAngle, int32 Budget, bool OnlyVisible) const;

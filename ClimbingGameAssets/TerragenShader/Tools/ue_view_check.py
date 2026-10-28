@@ -32,7 +32,11 @@ SETTLE_TICKS = 40  # frames to let a view render before and after each screensho
 # culling picks for that view (90-degree, square). The screenshots then go to view_cull_faces/ and should
 # match view_faces/ from a normal run exactly if the culling never leaves out a visible tile.
 CULL_TEST = os.environ.get('TG_CULLTEST') == '1'
-FACES_DIR = 'view_cull_faces' if CULL_TEST else 'view_faces'
+# TG_PROJECTION=sphere: draw the terrain atlas as a sphere map instead of cube faces. The screenshots go to
+# view_sphere_faces/ (view_sphere_cull_faces/ with TG_CULLTEST) and should match the cube ones but for the
+# resampling.
+SPHERE = os.environ.get('TG_PROJECTION', 'cube').lower() == 'sphere'
+FACES_DIR = 'view_' + ('sphere_' if SPHERE else '') + ('cull_' if CULL_TEST else '') + 'faces'
 
 state = {'tick': 0, 'step': 0, 'handle': None, 'before': set(), 'location': None, 'sky': None}
 
@@ -46,6 +50,8 @@ def setup():
     for a in actors.get_all_level_actors():
         if a != sky:
             a.set_is_temporarily_hidden_in_editor(True)
+    if SPHERE:
+        sky.set_editor_property('projection', unreal.TerragenProjection.SPHERE)
     unreal.TerragenSkybox.finish_compilation()
     sky.redraw_from_actor_location()
     # Everything is compiled by now, so this times the redraw on a quiet GPU.
@@ -66,7 +72,7 @@ def finish():
     os.makedirs(os.path.join(OUT, FACES_DIR), exist_ok=True)
     shots = sorted(set(glob.glob(os.path.join(SHOTS, '*.png'))) - state['before'], key=os.path.getmtime)
     for (name, _, _), path in zip(VIEWS, shots):
-        png = os.path.join(OUT, f'view_{"cull_" if CULL_TEST else ""}{name}.png')
+        png = os.path.join(OUT, f'{FACES_DIR[:-5]}{name}.png')
         shutil.move(path, png)
         w, h, img = read_png_rgb(png)
         for y in range(h - GIZMO, h):

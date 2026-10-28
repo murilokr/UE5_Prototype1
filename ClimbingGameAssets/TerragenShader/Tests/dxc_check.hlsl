@@ -22,7 +22,46 @@ Texture2D Atlas : register(t2);
 Texture2D CloudTex : register(t3);
 SamplerState AtlasSampler : register(s0);
 
-#if LEGACY_MATERIAL == 3
+#if LEGACY_MATERIAL == 4
+
+// The current materials: M_TerragenRender with the Projection input (RENDER_ATLAS=1) and M_TerragenSkyDisplay's
+// lookup for either projection (RENDER_ATLAS=0). The sky material is unchanged since LEGACY_MATERIAL=3.
+Texture2D SkyAtlas : register(t4);
+SamplerState SkyAtlasSampler : register(s1);
+Texture2D ReflSky : register(t5);
+
+cbuffer Params : register(b0)
+{
+	float4 CameraPos;
+	float4 ReflCameraPos;
+	float3 ViewDir;
+	float AtlasHeading;
+	float FaceSize;
+	float StartDistance;
+	float TerrainClearance;
+	float SkyFaceSize;
+	float ReflFaceSize;
+	float HeadingAtPlusX;
+	float Projection;
+};
+
+#if SKY_WORLD
+#define TG_CHECK_CLOUDS CloudTex
+#else
+#define TG_CHECK_CLOUDS NoiseTex
+#endif
+
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+{
+#if RENDER_ATLAS
+	return TG_RenderAtlasTexelComposite(TG_CHECK_WORLD(), HeightTex, NoiseTex, TG_CHECK_CLOUDS, SkyAtlas, SkyAtlasSampler, ReflSky, uv, CameraPos.xyz, ReflCameraPos.xyz, AtlasHeading, FaceSize, SkyFaceSize, ReflFaceSize, StartDistance, TerrainClearance, Projection);
+#else
+	float2 a = TG_ProjectionUV(TG_FromUEDirection(-ViewDir, HeadingAtPlusX), AtlasHeading, FaceSize, Projection);
+	return float4(TG_SRGBToLinear(Atlas.SampleLevel(AtlasSampler, a, 0.0).rgb), 1.0);
+#endif
+}
+
+#elif LEGACY_MATERIAL == 3
 
 // The current materials: M_TerragenRender with the reflection-sky atlas (RENDER_ATLAS=1), M_TerragenRenderSky
 // with the sky cull, the reflection mode and the atmosphere quality (RENDER_ATLAS=2).

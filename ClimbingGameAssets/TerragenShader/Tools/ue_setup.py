@@ -166,7 +166,7 @@ def build_render_material(height, noise, clouds, sky_rt, refl_rt):
     MEL.delete_all_material_expressions(mat)
     mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
     names = ['UV', 'HeightTex', 'NoiseTex', 'CameraPos', 'AtlasHeading', 'FaceSize', 'StartDistance', 'TerrainClearance',
-             'SkyAtlas', 'SkyFaceSize', 'ReflSky', 'ReflFaceSize', 'ReflCameraPos']
+             'SkyAtlas', 'SkyFaceSize', 'ReflSky', 'ReflFaceSize', 'ReflCameraPos', 'Projection']
     sources = [
         MEL.create_material_expression(mat, unreal.MaterialExpressionTextureCoordinate, -900, -200),
         texture_object_param(mat, 'HeightTex', height, -900, -60),
@@ -185,6 +185,8 @@ def build_render_material(height, noise, clouds, sky_rt, refl_rt):
         texture_object_param(mat, 'ReflSky', refl_rt, -900, 1220, unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR),
         scalar_param(mat, 'ReflFaceSize', 0.0, -900, 1420),
         camera_param(mat, -900, 1520, 'ReflCameraPos'),
+        # The terrain atlas's layout, 0 cube cross or 1 sphere map; the actor sets it from its Projection.
+        scalar_param(mat, 'Projection', 0.0, -900, 1620),
     ]
     cloud_arg = 'NoiseTex'   # never read when the world has no sky and no cloud shadows (TerragenUE.ush)
     if clouds is not None:
@@ -194,7 +196,7 @@ def build_render_material(height, noise, clouds, sky_rt, refl_rt):
         cloud_arg = 'CloudTex'
     code = (f'return TG_RenderAtlasTexelComposite(TGWorld_{WORLD}(), HeightTex, NoiseTex, {cloud_arg}, SkyAtlas, '
             'SkyAtlasSampler, ReflSky, UV, CameraPos.xyz, ReflCameraPos.xyz, AtlasHeading, FaceSize, SkyFaceSize, '
-            'ReflFaceSize, StartDistance, TerrainClearance);')
+            'ReflFaceSize, StartDistance, TerrainClearance, Projection);')
     return finish_material(mat, 'Terragen terrain texel', code, names, sources)
 
 
@@ -239,19 +241,25 @@ def build_display_material(rt):
     plus_x = scalar_param(mat, 'HeadingAtPlusX', HEADING, -1100, 120)
     heading = scalar_param(mat, 'AtlasHeading', HEADING, -1100, 220)
     face = scalar_param(mat, 'FaceSize', ATLAS_SIZE / 4, -1100, 320)
+    projection = scalar_param(mat, 'Projection', 0.0, -1100, 420)
     lookup = custom_node(
         mat, -750, 0, 'Atlas UV for view direction',
         # CameraVector points from the pixel to the camera; the view direction is the opposite.
-        'return TG_AtlasUV(TG_FromUEDirection(-ViewDir, HeadingAtPlusX), AtlasHeading, FaceSize);',
+        'return TG_ProjectionUV(TG_FromUEDirection(-ViewDir, HeadingAtPlusX), AtlasHeading, FaceSize, Projection);',
         unreal.CustomMaterialOutputType.CMOT_FLOAT2,
-        ['ViewDir', 'HeadingAtPlusX', 'AtlasHeading', 'FaceSize'],
+        ['ViewDir', 'HeadingAtPlusX', 'AtlasHeading', 'FaceSize', 'Projection'],
         ['/TerragenShaders/TerragenUE.ush'])
-    for src, pin in ((view, 'ViewDir'), (plus_x, 'HeadingAtPlusX'), (heading, 'AtlasHeading'), (face, 'FaceSize')):
+    for src, pin in ((view, 'ViewDir'), (plus_x, 'HeadingAtPlusX'), (heading, 'AtlasHeading'), (face, 'FaceSize'),
+                     (projection, 'Projection')):
         MEL.connect_material_expressions(src, '', lookup, pin)
     atlas = MEL.create_material_expression(mat, unreal.MaterialExpressionTextureSampleParameter2D, -450, 0)
     atlas.set_editor_property('parameter_name', 'Atlas')
     atlas.set_editor_property('texture', rt)
     atlas.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR)
+    # The atlas has one mip, and its UVs jump at face edges and at the sphere map's seam. Sampling level 0
+    # directly keeps screen derivatives (and anisotropic filtering along them) out of it.
+    atlas.set_editor_property('mip_value_mode', unreal.TextureMipValueMode.TMVM_MIP_LEVEL)
+    atlas.set_editor_property('const_mip_value', 0)
     MEL.connect_material_expressions(lookup, '', atlas, 'UVs')
     decode = custom_node(
         mat, -150, 0, 'Display to linear',
@@ -370,7 +378,8 @@ def gpu_check(sky):
     # keeps the tiles at 128 pixels), each on a temporary actor.
     actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     for label, props in (('exact_reflections', {'reflection_atlas_size': 0}),
-                         ('atlas_4096', {'terrain_atlas_size': 4096, 'tiles_per_face_side': 8})):
+                         ('atlas_4096', {'terrain_atlas_size': 4096, 'tiles_per_face_side': 8}),
+                         ('sphere_map', {'projection': unreal.TerragenProjection.SPHERE})):
         temp = actors.spawn_actor_from_class(unreal.TerragenSkybox, sky.get_actor_location())
         for prop in ('render_material', 'sky_render_material', 'display_material', 'terragen_start',
                      'heading_at_plus_x', 'atlas_heading'):

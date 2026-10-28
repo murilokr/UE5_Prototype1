@@ -1643,6 +1643,28 @@ float3 TG_AtlasLookup(Texture2D Atlas, float3 Dir, float AtlasHeading, float Fac
 	return lerp(top, bottom, ay);
 }
 
+// The sphere map (equirectangular), the other atlas layout ATerragenSkybox can draw: U goes once round from
+// heading AtlasHeading - 180 (left edge) through AtlasHeading (centre) to AtlasHeading + 180, V from straight up
+// (top) to straight down. Every column has the same angular size, so the horizon is equally sharp all round,
+// and the only seam (directly behind, at U = 0 / 1) filters across with wrap addressing.
+float3 TG_SphereDirection(float2 UV, float AtlasHeading)
+{
+	float h = (AtlasHeading + UV.x * 360.0 - 180.0) * TG_DEG;
+	float p = (90.0 - UV.y * 180.0) * TG_DEG;
+	return float3(sin(h) * cos(p), cos(h) * cos(p), sin(p));
+}
+
+// The inverse of TG_SphereDirection.
+float2 TG_SphereUV(float3 Dir, float AtlasHeading)
+{
+	float3 d = normalize(Dir);
+	float h = atan2(d.x, d.y) / TG_DEG - AtlasHeading + 180.0;
+	float u = h / 360.0;
+	u = u - floor(u);
+	float v = (90.0 - asin(clamp(d.z, -1.0, 1.0)) / TG_DEG) / 180.0;
+	return float2(u, v);
+}
+
 // ---------------------------------------------------------------- entry points
 
 TGShadeResult TG_EmptyResult(TGWorld W)

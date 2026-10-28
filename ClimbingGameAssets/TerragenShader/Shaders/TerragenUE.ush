@@ -97,37 +97,73 @@ float4 TG_RenderAtlasTexelSky(TGWorld W, Texture2D HeightTex, Texture2D CloudTex
 	return TG_RenderSkyRay(W, CloudTex, eye, dir, 2.0 / FaceSize);
 }
 
+// ---------------------------------------------------------------- projections
+// The terrain atlas (the one the sky sphere shows) can be laid out two ways. Projection 0: the cube cross, 4 x 4
+// faces of FaceSize. Projection 1: a sphere map (TG_SphereDirection), 4 * FaceSize wide and 2 * FaceSize tall,
+// so the same FaceSize setting gives the same width. The sky and reflection atlases are always cube crosses;
+// they are only looked up by direction.
+
+// View direction for an atlas UV; w = 0 outside the cube faces.
+float4 TG_ProjectionDirection(float2 UV, float AtlasHeading, float FaceSize, float Projection)
+{
+	if (Projection != 0.0)
+	{
+		float3 d = TG_SphereDirection(UV, AtlasHeading);
+		return float4(d.x, d.y, d.z, 1.0);
+	}
+	return TG_AtlasDirection(UV, AtlasHeading, FaceSize);
+}
+
+// The angle one atlas pixel spans, for the detail footprint: at a cube face's centre, or along the sphere
+// map's columns.
+float TG_ProjectionPixelAngle(float FaceSize, float Projection)
+{
+	return Projection != 0.0 ? 1.5707963 / FaceSize : 2.0 / FaceSize;
+}
+
+// Atlas UV for a view direction, the inverse of TG_ProjectionDirection.
+float2 TG_ProjectionUV(float3 Dir, float AtlasHeading, float FaceSize, float Projection)
+{
+	return Projection != 0.0 ? TG_SphereUV(Dir, AtlasHeading) : TG_AtlasUV(Dir, AtlasHeading, FaceSize);
+}
+
 // Terrain pass: like TG_RenderAtlasTexel, but a ray that hits nothing returns alpha 0 without computing the sky.
 // With ReflFaceSize > 0, water reflections read their sky from ReflSky, a Mode 1 sky atlas with faces of that
 // size drawn with the camera at ReflCameraPos (see TG_ShadeRayEx); 0 computes it exactly.
-float4 TG_RenderAtlasTexelTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float ReflFaceSize, float StartDistance, float Clearance)
+float4 TG_RenderAtlasTexelTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float ReflFaceSize, float StartDistance, float Clearance, float Projection)
 {
-	float4 d = TG_AtlasDirection(UV, AtlasHeading, FaceSize);
+	float4 d = TG_ProjectionDirection(UV, AtlasHeading, FaceSize, Projection);
 	if (d.w == 0.0)
 	{
 		return float4(0.0, 0.0, 0.0, 0.0);
 	}
 	float3 eye = TG_KeepAboveTerrain(W, HeightTex, CameraPos, Clearance);
-	TGShadeResult R = TG_ShadeRayEx(W, HeightTex, NoiseTex, CloudTex, eye, float3(d.x, d.y, d.z), 2.0 / FaceSize, StartDistance, true,
-	                                ReflSky, ReflCameraPos, AtlasHeading, ReflFaceSize);
+	TGShadeResult R = TG_ShadeRayEx(W, HeightTex, NoiseTex, CloudTex, eye, float3(d.x, d.y, d.z), TG_ProjectionPixelAngle(FaceSize, Projection),
+	                                StartDistance, true, ReflSky, ReflCameraPos, AtlasHeading, ReflFaceSize);
 	float3 c = TG_ToneMap(W, R.Linear);
 	return float4(c.x, c.y, c.z, R.Alpha);
 }
 
+float4 TG_RenderAtlasTexelTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float ReflFaceSize, float StartDistance, float Clearance)
+{
+	return TG_RenderAtlasTexelTerrain(W, HeightTex, NoiseTex, CloudTex, ReflSky, UV, CameraPos, ReflCameraPos, AtlasHeading, FaceSize, ReflFaceSize, StartDistance, Clearance, 0.0);
+}
+
 float4 TG_RenderAtlasTexelTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float StartDistance, float Clearance)
 {
-	return TG_RenderAtlasTexelTerrain(W, HeightTex, NoiseTex, CloudTex, NoiseTex, UV, CameraPos, CameraPos, AtlasHeading, FaceSize, 0.0, StartDistance, Clearance);
+	return TG_RenderAtlasTexelTerrain(W, HeightTex, NoiseTex, CloudTex, NoiseTex, UV, CameraPos, CameraPos, AtlasHeading, FaceSize, 0.0, StartDistance, Clearance, 0.0);
 }
 
 // The terrain pass plus the sky atlas: where the terrain pass found no terrain, look the direction up in the
-// sky atlas (face size SkyFaceSize, same layout and heading). Returns the display colour, alpha 1. ReflSky,
-// ReflCameraPos and ReflFaceSize are the reflection-sky atlas, as for TG_RenderAtlasTexelTerrain.
-float4 TG_RenderAtlasTexelComposite(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D SkyAtlas, SamplerState SkySampler, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float SkyFaceSize, float ReflFaceSize, float StartDistance, float Clearance)
+// sky atlas (a cube cross with faces of SkyFaceSize, same heading). Returns the display colour, alpha 1.
+// ReflSky, ReflCameraPos and ReflFaceSize are the reflection-sky atlas, as for TG_RenderAtlasTexelTerrain;
+// Projection is the terrain atlas's layout.
+float4 TG_RenderAtlasTexelComposite(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D SkyAtlas, SamplerState SkySampler, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float SkyFaceSize, float ReflFaceSize, float StartDistance, float Clearance, float Projection)
 {
-	float4 t = TG_RenderAtlasTexelTerrain(W, HeightTex, NoiseTex, CloudTex, ReflSky, UV, CameraPos, ReflCameraPos, AtlasHeading, FaceSize, ReflFaceSize, StartDistance, Clearance);
+	float4 t = TG_RenderAtlasTexelTerrain(W, HeightTex, NoiseTex, CloudTex, ReflSky, UV, CameraPos, ReflCameraPos, AtlasHeading, FaceSize, ReflFaceSize, StartDistance, Clearance, Projection);
 	if (t.w == 0.0)
 	{
-		float4 d = TG_AtlasDirection(UV, AtlasHeading, FaceSize);
+		float4 d = TG_ProjectionDirection(UV, AtlasHeading, FaceSize, Projection);
 		if (d.w != 0.0)
 		{
 			float2 s = TG_AtlasUV(float3(d.x, d.y, d.z), AtlasHeading, SkyFaceSize);
@@ -138,10 +174,16 @@ float4 TG_RenderAtlasTexelComposite(TGWorld W, Texture2D HeightTex, Texture2D No
 	return t;
 }
 
+// The cube cross only: the signature of the materials made before the sphere map.
+float4 TG_RenderAtlasTexelComposite(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D SkyAtlas, SamplerState SkySampler, Texture2D ReflSky, float2 UV, float3 CameraPos, float3 ReflCameraPos, float AtlasHeading, float FaceSize, float SkyFaceSize, float ReflFaceSize, float StartDistance, float Clearance)
+{
+	return TG_RenderAtlasTexelComposite(W, HeightTex, NoiseTex, CloudTex, SkyAtlas, SkySampler, ReflSky, UV, CameraPos, ReflCameraPos, AtlasHeading, FaceSize, SkyFaceSize, ReflFaceSize, StartDistance, Clearance, 0.0);
+}
+
 // Without the reflection atlas (reflections exact): the signature of the first split materials.
 float4 TG_RenderAtlasTexelComposite(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, Texture2D SkyAtlas, SamplerState SkySampler, float2 UV, float3 CameraPos, float AtlasHeading, float FaceSize, float SkyFaceSize, float StartDistance, float Clearance)
 {
-	return TG_RenderAtlasTexelComposite(W, HeightTex, NoiseTex, CloudTex, SkyAtlas, SkySampler, NoiseTex, UV, CameraPos, CameraPos, AtlasHeading, FaceSize, SkyFaceSize, 0.0, StartDistance, Clearance);
+	return TG_RenderAtlasTexelComposite(W, HeightTex, NoiseTex, CloudTex, SkyAtlas, SkySampler, NoiseTex, UV, CameraPos, CameraPos, AtlasHeading, FaceSize, SkyFaceSize, 0.0, StartDistance, Clearance, 0.0);
 }
 
 // The signature M_TerragenRender was created with (no cloud map). Only for worlds where the cloud map is

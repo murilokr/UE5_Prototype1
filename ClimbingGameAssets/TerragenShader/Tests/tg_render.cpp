@@ -140,7 +140,20 @@ static int CheckAtlasRoundTrip(float heading, int faceSize)
 			if (std::fabs(back.x * atlas - (x + 0.5f)) > 0.01f || std::fabs(back.y * atlas - (y + 0.5f)) > 0.01f) bad++;
 		}
 	std::printf("atlas round trip: %d of %d texels off by more than 0.01 px\n", bad, total);
-	return bad;
+	// The sphere map (4 * faceSize x 2 * faceSize) the same way, and the projection wrappers agree with it.
+	int sw = faceSize * 4, sh = faceSize * 2, sbad = 0;
+	for (int y = 0; y < sh; y++)
+		for (int x = 0; x < sw; x++)
+		{
+			float2 uv((x + 0.5f) / sw, (y + 0.5f) / sh);
+			float4 d = TG_ProjectionDirection(uv, heading, (float)faceSize, 1.0f);
+			float2 back = TG_ProjectionUV(float3(d.x, d.y, d.z), heading, (float)faceSize, 1.0f);
+			float dx = std::fabs(back.x * sw - (x + 0.5f));
+			dx = std::fmin(dx, sw - dx);   // across the seam behind
+			if (dx > 0.01f || std::fabs(back.y * sh - (y + 0.5f)) > 0.01f) sbad++;
+		}
+	std::printf("sphere map round trip: %d of %d texels off by more than 0.01 px\n", sbad, sw * sh);
+	return bad + sbad;
 }
 
 int main(int argc, char** argv)

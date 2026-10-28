@@ -22,8 +22,9 @@ where dxc >nul 2>nul || (echo dxc not on PATH, skipping the HLSL checks & exit /
 rem Variants (RENDER_ATLAS SKY_WORLD LEGACY_MATERIAL): sky lookup; atlas with MountainTop (sky off); atlas with
 rem Prototype2World (sky on); then the exact Custom-node calls of the first Unreal materials (LEGACY_MATERIAL=1)
 rem and of the first split ones (LEGACY_MATERIAL=2: terrain pass, then sky pass, for both worlds), and the current
-rem ones (LEGACY_MATERIAL=3, with the reflection-sky atlas).
-for %%v in ("0 0 0" "1 0 0" "1 1 0" "0 0 1" "1 0 1" "1 0 2" "1 1 2" "2 0 2" "2 1 2" "1 0 3" "1 1 3" "2 0 3" "2 1 3") do for /f "tokens=1,2,3" %%a in (%%v) do (
+rem ones with the reflection-sky atlas (LEGACY_MATERIAL=3), and the current ones with the Projection input
+rem (LEGACY_MATERIAL=4: terrain pass, then the display lookup).
+for %%v in ("0 0 0" "1 0 0" "1 1 0" "0 0 1" "1 0 1" "1 0 2" "1 1 2" "2 0 2" "2 1 2" "1 0 3" "1 1 3" "2 0 3" "2 1 3" "1 0 4" "1 1 4" "0 0 4") do for /f "tokens=1,2,3" %%a in (%%v) do (
 	dxc -nologo -T ps_6_6 -E main -HV 2018 -DRENDER_ATLAS=%%a -DSKY_WORLD=%%b -DLEGACY_MATERIAL=%%c -I "%ROOT%\Shaders" -Fo "%ROOT%\Build\dxc_check_%%a%%b%%c.dxil" "%HERE%dxc_check.hlsl" || exit /b 1
 	fxc /nologo /T ps_5_0 /E main /O1 /DRENDER_ATLAS=%%a /DSKY_WORLD=%%b /DLEGACY_MATERIAL=%%c /I "%ROOT%\Shaders" /Fo "%ROOT%\Build\fxc_check_%%a%%b%%c.dxbc" "%HERE%dxc_check.hlsl" >nul || exit /b 1
 )

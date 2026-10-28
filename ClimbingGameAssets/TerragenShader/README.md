@@ -180,6 +180,7 @@ Place an **ATerragenSkybox** where frame 1 of the old skybox was taken. That's t
 | `KeepAboveTerrain`, `TerrainClearance` | on, 150 cm | Where your level and the Terragen terrain don't line up, the player can be below the Terragen ground. This lifts the Terragen camera to the clearance above the ground (or water) there, instead of rendering the inside of the terrain. |
 | `HeadingAtPlusX` | 18 | Which Terragen heading Unreal +X looks at. 18 puts the old Front face along +X. |
 | `StartDistance` | 0 | Leaves out terrain nearer than this many Terragen units, so real level geometry can stand in for it. |
+| `Projection` | Cube | The terrain atlas's layout; see [Cube or sphere map](#cube-or-sphere-map). |
 | `TerrainAtlasSize`, `TilesPerFaceSide` | 2048, 4 | The terrain atlas: 512-px faces in 128-px tiles. On a 1080p screen a 90° view spreads each texel over about 4 pixels, which is the softness you see; 4096 (with 8 tiles per side) is sharper and costs about 3.5× as much per frame. |
 | `SkyAtlasSize`, `SkyTilesPerFaceSide` | 1024, 2 | The sky atlas. The sky is soft, so it can be smaller. |
 | `ReflectionAtlasSize` | 512 | The reflection atlas. 0 computes every reflection exactly in the terrain pass instead. |
@@ -191,6 +192,19 @@ Place an **ATerragenSkybox** where frame 1 of the old skybox was taken. That's t
 | `SkyRadius` | 10 km | Radius of the sky sphere. Level geometry beyond it is hidden. |
 
 In the editor, the **Redraw From Actor Location** button on the actor previews the sky.
+
+### Cube or sphere map
+
+The picture is shown on `SkyMesh`, the engine's basic sphere scaled to `SkyRadius` and kept centred on the camera. The mesh only carries the picture: its material (`M_TerragenSkyDisplay`) turns each pixel's view direction into a lookup in the terrain atlas, so a cube or any other closed mesh would show exactly the same image. What does matter is how the atlas is laid out, which `Projection` sets:
+
+| | Cube | Sphere |
+|---|---|---|
+| Layout | Six 90° faces in the old skyboxes' cross (`TerrainAtlasSize`² with 6 of 16 squares used) | Equirectangular, `TerrainAtlasSize` × half that: longitude across, from up to down vertically |
+| Sharpness | Varies across each face: a texel at a face's centre covers about twice the angle of one at its edge, so detail visibly sharpens and softens as the view turns | The same all round the horizon (0.18° per pixel at 2048); finer towards straight up and down |
+| Seams | Filtering stops at every cube edge, which can show as faint lines that move as you turn | One, directly behind, and filtering wraps across it |
+| Cost | 1.57 M pixels at 2048 | 2.1 M pixels at 2048 (see the timings) |
+
+The sky and reflection atlases stay cube crosses either way: they are only looked up by direction, never shown directly. The display samples the atlas at mip level 0 directly, without screen derivatives, so UV jumps at face edges and at the seam can't make the filtering smear.
 
 ### Switching worlds
 
@@ -249,6 +263,9 @@ Shader cost: the CPU harness renders the full 2048² atlas in 2.0 s for Mountain
 | Cost per pass on an idle RTX 4060 Ti, Prototype2World (MountainTop) | Visible terrain tiles of a 90° 16:9 view, the per-frame cost while moving: 11.5 ms (8.1 ms). Whole terrain atlas 33 ms (23 ms). Whole sky atlas 86 ms, about 3.6 ms a tile; whole reflection atlas 35 ms, about 6 ms a face; both only while catching up after 20 m of movement |
 | The same view with reflections computed exactly (`ReflectionAtlasSize` 0) | 29 ms; the whole terrain atlas 98 ms |
 | The same view with a 4096 terrain atlas | 40.5 ms (28.5 ms) |
+| The same view with `Projection` Sphere | 11.2 ms (7.6 ms), slightly less than the cube: its pixels are spread evenly, so fewer land in a view. The whole atlas costs more: 39 ms (27 ms) |
+| Sphere-map viewport screenshots vs cube ones (`TG_PROJECTION=sphere` with `ue_view_check.py`), Prototype2World | Same image and orientation on all six views, face averages within 1 level; 7–10 levels per pixel from sampling the fine texture at different points |
+| Culled vs full screenshots (`TG_CULLTEST=1`), cube and sphere | Identical |
 
 ### Things to know
 

@@ -39,6 +39,7 @@ namespace TerragenSkyboxAtlas
 	const FName ReflSky(TEXT("ReflSky"));
 	const FName ReflFaceSize(TEXT("ReflFaceSize"));
 	const FName ReflCameraPos(TEXT("ReflCameraPos"));
+	const FName Projection(TEXT("Projection"));        // terrain atlas layout: 0 cube cross, 1 sphere map
 	const FName Atlas(TEXT("Atlas"));
 	const FName HeightTex(TEXT("HeightTex"));
 	const FName NoiseTex(TEXT("NoiseTex"));
@@ -66,6 +67,14 @@ namespace TerragenSkyboxAtlas
 		const double X = Face < 4 ? Size - LocalX : LocalX;
 		const double Y = Face >= 4 ? Size - LocalY : LocalY;
 		return CameraRay(AtlasHeadingDeg + HeadingOffset, Pitch, X, Y, Size);
+	}
+
+	// TG_SphereDirection (Terragen.ush): U once round from AtlasHeading - 180, V from straight up to straight down.
+	FVector SphereDirection(double U, double V, double AtlasHeadingDeg)
+	{
+		const double H = FMath::DegreesToRadians(AtlasHeadingDeg + U * 360.0 - 180.0);
+		const double P = FMath::DegreesToRadians(90.0 - V * 180.0);
+		return FVector(FMath::Sin(H) * FMath::Cos(P), FMath::Cos(H) * FMath::Cos(P), FMath::Sin(P));
 	}
 }
 
@@ -133,6 +142,7 @@ void ATerragenSkybox::PostEditChangeProperty(FPropertyChangedEvent& Event)
 	}
 	else if (Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, RenderMaterial) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyRenderMaterial) ||
 	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, DisplayMaterial) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TerrainAtlasSize) ||
+	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, Projection) ||
 	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyAtlasSize) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, ReflectionAtlasSize) ||
 	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TilesPerFaceSide) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyTilesPerFaceSide))
 	{
@@ -469,14 +479,15 @@ bool ATerragenSkybox::MaterialsReady() const
 	return true;
 }
 
-UTextureRenderTarget2D* ATerragenSkybox::CreateAtlas(int32 Size, bool FloatingPoint) const
+UTextureRenderTarget2D* ATerragenSkybox::CreateAtlas(int32 Size, bool FloatingPoint, bool SphereMap) const
 {
 	// 8-bit linear, so the shader's display values are stored as they are (like Terragen's 8-bit output); the
-	// reflection atlas holds linear colour, which goes above 1, so it is half-float.
-	UTextureRenderTarget2D* Target = UKismetRenderingLibrary::CreateRenderTarget2D(const_cast<ATerragenSkybox*>(this), Size, Size, FloatingPoint ? RTF_RGBA16f : RTF_RGBA8, FLinearColor::Black, false);
+	// reflection atlas holds linear colour, which goes above 1, so it is half-float. A sphere map is half as tall
+	// and wraps round horizontally, so filtering crosses its seam behind.
+	UTextureRenderTarget2D* Target = UKismetRenderingLibrary::CreateRenderTarget2D(const_cast<ATerragenSkybox*>(this), Size, SphereMap ? Size / 2 : Size, FloatingPoint ? RTF_RGBA16f : RTF_RGBA8, FLinearColor::Black, false);
 	if (Target)
 	{
-		Target->AddressX = TA_Clamp;
+		Target->AddressX = SphereMap ? TA_Wrap : TA_Clamp;
 		Target->AddressY = TA_Clamp;
 		Target->UpdateResourceImmediate(true);
 	}
@@ -507,6 +518,42 @@ void ATerragenSkybox::BuildTiles(FAtlasState& State, int32 AtlasSize, int32 Tile
 				}
 				State.Tiles.Add(Tile);
 			}
+		}
+	}
+	State.DrawnAt.Init(FVector::ZeroVector, State.Tiles.Num());
+	State.Drawn.Init(false, State.Tiles.Num());
+	State.AnyDrawn = false;
+}
+
+void ATerragenSkybox::BuildSphereTiles(FAtlasState& State, int32 AtlasWidth, int32 TilesPerFace) const
+{
+	// Square tiles the size the cube layout would use, over a map AtlasWidth x AtlasWidth / 2.
+	const double Width = AtlasWidth, Height = AtlasWidth / 2.0;
+	const double Step = Width / 4.0 / TilesPerFace;
+	const int32 Columns = 4 * TilesPerFace, Rows = 2 * TilesPerFace;
+	State.Tiles.Reset();
+	for (int32 j = 0; j < Rows; j++)
+	{
+		for (int32 i = 0; i < Columns; i++)
+		{
+			FAtlasTile Tile;
+			Tile.Face = -1;
+			Tile.PixelOrigin = FVector2D(i * Step, j * Step);
+			Tile.PixelSize = Step;
+			Tile.Direction = TerragenSkyboxAtlas::SphereDirection((i + 0.5) * Step / Width, (j + 0.5) * Step / Height, AtlasHeading);
+			// Rows near the poles are far from square on the sphere, so check points all along the border, not just
+			// the corners.
+			constexpr int32 N = 8;
+			for (int32 k = 0; k <= N; k++)
+			{
+				const double t = double(k) / N;
+				for (const FVector2D P : { FVector2D(i + t, j), FVector2D(i + t, j + 1), FVector2D(i, j + t), FVector2D(i + 1, j + t) })
+				{
+					const FVector D = TerragenSkyboxAtlas::SphereDirection(P.X * Step / Width, P.Y * Step / Height, AtlasHeading);
+					Tile.Radius = FMath::Max(Tile.Radius, FMath::Acos(FMath::Clamp(FVector::DotProduct(D, Tile.Direction), -1.0, 1.0)));
+				}
+			}
+			State.Tiles.Add(Tile);
 		}
 	}
 	State.DrawnAt.Init(FVector::ZeroVector, State.Tiles.Num());
@@ -567,11 +614,21 @@ bool ATerragenSkybox::EnsureMaterials()
 		UE_LOG(LogTemp, Warning, TEXT("TerragenSkybox: missing materials; run ClimbingGameAssets/TerragenShader/Tools/ue_setup.py"));
 		return false;
 	}
-	TerrainTarget = CreateAtlas(TerrainAtlasSize);
-	BuildTiles(Terrain, TerrainAtlasSize, TilesPerFaceSide);
+	const bool SphereMap = Projection == ETerragenProjection::Sphere;
+	TerrainTarget = CreateAtlas(TerrainAtlasSize, false, SphereMap);
+	if (SphereMap)
+	{
+		BuildSphereTiles(Terrain, TerrainAtlasSize, TilesPerFaceSide);
+	}
+	else
+	{
+		BuildTiles(Terrain, TerrainAtlasSize, TilesPerFaceSide);
+	}
+	// Both layouts take a quarter of the atlas width as FaceSize (TerragenUE.ush, "projections").
 	const float TerrainFace = TerrainAtlasSize / 4.f;
 	TerrainMID = UMaterialInstanceDynamic::Create(Render, this);
 	TerrainMID->SetScalarParameterValue(TerragenSkyboxAtlas::FaceSize, TerrainFace);
+	TerrainMID->SetScalarParameterValue(TerragenSkyboxAtlas::Projection, SphereMap ? 1.f : 0.f);
 	// Without a reflection atlas the terrain pass computes reflections itself (ReflFaceSize 0).
 	TerrainMID->SetScalarParameterValue(TerragenSkyboxAtlas::ReflFaceSize, 0.f);
 	if (SkyRender)
@@ -597,6 +654,7 @@ bool ATerragenSkybox::EnsureMaterials()
 	DisplayMID = UMaterialInstanceDynamic::Create(Display, this);
 	DisplayMID->SetTextureParameterValue(TerragenSkyboxAtlas::Atlas, TerrainTarget);
 	DisplayMID->SetScalarParameterValue(TerragenSkyboxAtlas::FaceSize, TerrainFace);
+	DisplayMID->SetScalarParameterValue(TerragenSkyboxAtlas::Projection, SphereMap ? 1.f : 0.f);
 	SkyMesh->SetMaterial(0, DisplayMID);
 	return true;
 }
