@@ -25,6 +25,8 @@ The same `.ush` also compiles as C++ (`Tests/hlsl_shim.h`), so `Tests/tg_render`
 | `Textures/prototype2_v2_height.png` | Lossless 16-bit heightfield (`.r16` is the same data, raw, for the harness). |
 | `Textures/noise128.png` | Terragen's value-noise lattice: `srand(1)`, 16384 × `rand()`. |
 | `Textures/<World>_clouds.png` | The world's 513² cloud map, 8-bit (value + 128); `.r8` is the same data, raw. |
+| `Tools/worlds.json` | The registry of worlds: world file, terrain, overrides, start camera, sun. Every tool reads it. |
+| `Tools/build_world.py` | Generates a registered world's `Shaders/Worlds/<Name>.ush` and cloud map (runs the three tools below). |
 | `Tools/ter_convert.py` | `.ter` → height texture + `.json` metadata. |
 | `Tools/make_noise_table.py` | Writes `noise128.png/.r16`. |
 | `Tools/make_perlin_tables.py` | Writes `Shaders/TerragenPerlin.ush`. |
@@ -46,9 +48,7 @@ cd ClimbingGameAssets/TerragenShader
 python Tools/ter_convert.py ../DynamicPrototype2/prototype2_v2.ter -o Textures
 python Tools/make_noise_table.py -o Textures
 python Tools/make_perlin_tables.py
-python Tools/tgw_to_ush.py ../DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw Textures/prototype2_v2.json -o Shaders/Worlds/MountainTop.ush --name MountainTop --pre-sky
-python Tools/tgw_to_ush.py ../DynamicPrototype2/Prototype2World.tgw Textures/prototype2_v2.json -o Shaders/Worlds/Prototype2World.ush --name Prototype2World --sun 24 48 --cloud-shadows 1
-python Tools/make_cloud_map.py ../DynamicPrototype2/Prototype2World.tgw -o Textures --name Prototype2World
+python Tools/build_world.py --all
 Tests\build.cmd
 Build\tg_render.exe Textures/prototype2_v2_height.r16 Textures/noise128.r16 Out/frame0001
 python Tools/unpack_cross.py ../Textures/MountainTop/Sky_MountainSide_Alt_0001.png Out/reference 0001
@@ -56,6 +56,8 @@ python Tools/compare.py Out/reference 0001 Out/frame0001
 Build\tg_render_Prototype2World.exe Textures/prototype2_v2_height.r16 Textures/noise128.r16 Out/sky_p2w --cam 198 270 16.43 --heading 18 --clouds Textures/Prototype2World_clouds.r8
 python Tools/compare.py ../Output 0001 Out/sky_p2w
 ```
+
+`build_world.py` runs `tgw_to_ush.py` (and `make_cloud_map.py` for worlds with clouds) with each world's options from `Tools/worlds.json`; the output is byte-identical to the committed files. `--out <dir>` writes elsewhere, to check that.
 
 `--pre-sky` keeps MountainTop rendering exactly as it was validated before the sky work: the cloud dimming fades in over the cloud depth (the DLL uses the atmosphere step, which would shift MountainTop's frame-1 error by about ±1 level per channel) and the water is a flat lit plane.
 
@@ -172,6 +174,8 @@ Place an **ATerragenSkybox** where frame 1 of the old skybox was taken. That's t
 
 | Setting | Default | Meaning |
 |---|---|---|
+| `TerragenWorld` | none | The world to show: a `DA_TerragenWorld_<Name>` asset. It sets the materials, `TerragenStart`, `CentimetresPerUnit` and the headings, which are then greyed out. Without one, set those by hand (the defaults are MountainTop's). |
+| `SunLight` | none | A directional light to turn to the world's sun whenever the world is set. It must be Movable or Stationary to turn during play. |
 | `FollowHorizontal` | on | Off matches the old skyboxes, which only changed with altitude. |
 | `KeepAboveTerrain`, `TerrainClearance` | on, 150 cm | Where your level and the Terragen terrain don't line up, the player can be below the Terragen ground. This lifts the Terragen camera to the clearance above the ground (or water) there, instead of rendering the inside of the terrain. |
 | `HeadingAtPlusX` | 18 | Which Terragen heading Unreal +X looks at. 18 puts the old Front face along +X. |
@@ -188,6 +192,21 @@ Place an **ATerragenSkybox** where frame 1 of the old skybox was taken. That's t
 
 In the editor, the **Redraw From Actor Location** button on the actor previews the sky.
 
+### Switching worlds
+
+Each world is one `UTerragenWorld` asset (`DA_TerragenWorld_MountainTop`, `DA_TerragenWorld_Prototype2World`). To switch:
+- **In the editor:** pick another asset in the actor's `TerragenWorld`, then press **Redraw From Actor Location**.
+- **During play:** call `SetTerragenWorld` (Blueprint or C++). The next frame redraws everything once, about 150 ms for Prototype2World, then it is back to the usual per-frame cost.
+
+Why an asset and not a setting: a world's terrain layers, sun, water and sky are compiled into its materials' shaders (from `Shaders/Worlds/<Name>.ush`). That keeps each world as fast as its features allow (MountainTop's shaders contain no sky code at all), but it means each world has its own materials. The asset bundles them with the world's placement.
+
+### Adding a world
+
+1. Add an entry to `Tools/worlds.json`: the `.tgw`, its `.ter`, any overrides, the start camera, heading and sun.
+2. `python Tools/build_world.py <Name>` generates `Shaders/Worlds/<Name>.ush` (and the cloud map, the terrain's height texture if new).
+3. With the editor closed, run `Tools/ue_setup.py` with `TG_WORLD=<Name>` (see below). It makes the materials, `DA_TerragenWorld_<Name>` and a `TerragenSkyTest_<Name>` map, and checks the GPU render.
+4. Optionally add the world to `Tests/build.cmd` and `Tests/dxc_check.hlsl` for the CPU harness and compile checks.
+
 ### Recreating the assets
 
 Run `Tools/ue_setup.py` inside the editor. Python only needs enabling for that run; the project itself doesn't need the plugin:
@@ -203,9 +222,10 @@ The last option stops the editor reopening last session's asset tabs. With those
 To build the sky world instead, set `TG_WORLD=Prototype2World` for that run. It adds assets with a `_Prototype2World` suffix:
 - `M_TerragenRender_Prototype2World` and `M_TerragenRenderSky_Prototype2World`, with a `CloudTex` input whose default is `Textures/T_TerragenClouds_Prototype2World`
 - `M_TerragenSkyDisplay_Prototype2World` and the default render targets
-- the `TerragenSkyTest_Prototype2World` map, with an `ATerragenSkybox` pointed at those assets
+- `DA_TerragenWorld_Prototype2World`, which bundles those for the actor
+- the `TerragenSkyTest_Prototype2World` map, with an `ATerragenSkybox` using it
 
-It also exports `Out/ue/Prototype2World/`. The MountainTop assets are left alone: the height and noise textures are shared, and only imported if missing. To use the sky world in another level, set a placed actor's `RenderMaterial`, `SkyRenderMaterial` and `DisplayMaterial` to those assets, and `TerragenStart` to (198, 270, 16.43).
+It also exports `Out/ue/Prototype2World/`. The MountainTop assets are left alone: the height and noise textures are shared, and only imported if missing. To use the sky world in another level, set a placed actor's `TerragenWorld` to `DA_TerragenWorld_Prototype2World`.
 
 Both runs also time each pass on the GPU and write `timing.txt` next to the exported atlases.
 
@@ -236,4 +256,15 @@ Shader cost: the CPU harness renders the full 2048² atlas in 2.0 s for Mountain
   - Nearest filtering on `RT_TerragenSky` keeps the texels crisp.
   - A post-process material in front of the tonemapper would be needed to show Terragen's exact bytes.
 - **Async builds in the editor.** Right after loading, the height texture is still building. The actor waits for its textures and shaders before drawing, because the placeholder texture would render the whole sky as snow.
-- **Game target.** `Prototype1.Build.cs` depends on `UnrealEd` for every target, which UBT refuses for non-editor builds. That predates this work and is the TODO in that file. The game target built cleanly once `UnrealEd` was made editor-only (`if (Target.bBuildEditor)`), but `Build.cs` was left unchanged.
+- **Game target.** `Prototype1.Build.cs` now adds `UnrealEd` only for editor builds (`if (Target.bBuildEditor)`), which the game target needs; with it, the game target built cleanly.
+
+## Future work: authoring worlds in the editor
+
+Today a world starts life as a Terragen 0.9 `.tgw` + `.ter` made in Terragen itself, and goes through `build_world.py` (Python, outside the editor) and `ue_setup.py`. The goal is an in-editor tool that makes our own worlds without Terragen:
+
+- **A world editor panel** (Editor Utility Widget or a Slate plugin) to edit what `tgw_to_ush.py` reads: sun, light and ambient colours, exposure and tone curve, atmosphere layers, cloud layer (seed, persistence, feature size, altitude, density), water level and waves, and the surface-layer tree (colours, altitude and slope limits, coverage, bump, noise).
+- **Terrain** from a heightmap import, or sculpted with Unreal's Landscape tools and exported to the 513² height texture (the research on in-world Terragen terrain covers using Landscape).
+- **Output** in the same form the pipeline already uses: a `worlds.json` entry plus a generated `Shaders/Worlds/<Name>.ush` and cloud map, then the `ue_setup.py` steps. Optionally a `.tgw`/`.ter` writer too, so a world can still be opened in Terragen to compare.
+- **Live preview** while editing. Compiled worlds need a shader recompile per change (FXC takes about 30 s for a sky world), so the tool would want a "runtime world" variant: the same shader reading the `TGWorld` values from material parameters or a small data texture instead of constants. Slower per pixel, but instant to tweak; bake to a compiled world when done.
+
+The pieces that make this practical are already in place: `tgw_to_ush.py` documents every field and its source in the DLL, `make_cloud_map.py` reproduces Terragen's generator exactly, and `UTerragenWorld` is the hand-off point to the actor.

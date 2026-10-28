@@ -16,21 +16,25 @@ Creates in /Game/MyStuff/Skybox/Terragen:
   M_TerragenRenderSky     the sky pass (Mode 0) and the reflection-sky pass (Mode 1), TG_RenderAtlasTexelSky
   RT_TerragenSkyOnly, RT_TerragenReflSky   defaults for the terrain pass's sky and reflection atlas inputs
   M_TerragenSkyDisplay    sky-sphere material: looks the view direction up in RT_TerragenSky
+  DA_TerragenWorld_MountainTop   the world asset (UTerragenWorld) ATerragenSkybox.TerragenWorld points at
   TerragenSkyTest         a small test map with a floor, a player start and an ATerragenSkybox
 
 Then it renders the atlas for MountainTop frames 1 and 400, times a full redraw, and exports
 Out/ue/Atlas_GPU_0001.png and Atlas_GPU_0400.png for comparison with the CPU harness. Set the environment
 variable TG_SETUP_NO_QUIT=1 to keep the editor open afterwards.
 
-Sky worlds: set TG_WORLD=Prototype2World to build that world instead, next to the MountainTop assets and
-without touching them. It creates, with the world's name as a suffix:
+Other worlds: set TG_WORLD=<Name> to build another world from Tools/worlds.json (after Tools/build_world.py
+has generated its shader include), next to the MountainTop assets and without touching them. For example
+TG_WORLD=Prototype2World creates, with the world's name as a suffix:
   Textures/T_TerragenClouds_<World>   the cloud map (Tools/make_cloud_map.py), 8-bit greyscale read with Load
   M_TerragenRender_<World>            TG_RenderAtlasTexel with the CloudTex input
   M_TerragenSkyDisplay_<World>, RT_TerragenSky_<World>
-  TerragenSkyTest_<World>             test map whose ATerragenSkybox points at the assets above
-and exports Out/ue/<World>/Atlas_GPU_0001.png and timing.txt. The height and noise textures are shared
-(Prototype2World uses the same terrain) and only imported if missing.
+  DA_TerragenWorld_<World>            the world asset; point any ATerragenSkybox at it to show this world
+  TerragenSkyTest_<World>             test map whose ATerragenSkybox uses it
+and exports Out/ue/<World>/Atlas_GPU_0001.png and timing.txt. Worlds on the same terrain share its height
+texture, and the noise texture is shared by all; those are only imported if missing.
 """
+import json
 import os
 
 import unreal
@@ -42,21 +46,22 @@ ATLAS_SIZE = 2048       # ATerragenSkybox's TerrainAtlasSize default
 SKY_ATLAS_SIZE = 1024   # its SkyAtlasSize
 REFL_ATLAS_SIZE = 512   # and its ReflectionAtlasSize
 
-# Per world: the Terragen camera of frame 1 (the actor's TerragenStart), the sun for the test map's light
-# and the frames gpu_check renders (GenSkyboxAnimation.tgs raises the camera 0.067 units per frame).
-WORLDS = {
-    'MountainTop': {'clouds': None, 'start': (164.0, 223.0, 45.647), 'sun': (260.0, 43.0), 'frames': (1, 400)},
-    # The reference render's sun (24, 48) and camera, fitted (see README); the world file's sun is 119, 43.
-    'Prototype2World': {'clouds': 'Prototype2World_clouds.png', 'start': (198.0, 270.0, 16.43), 'sun': (24.0, 48.0),
-                        'frames': (1,)},
-}
+# Per world (Tools/worlds.json): the Terragen camera of frame 1 (the actor's TerragenStart), the heading along
+# Unreal +X, the sun for the test map's light and the frames gpu_check renders (GenSkyboxAnimation.tgs raises
+# the camera 0.067 units per frame).
+with open(os.path.join(ROOT, 'Tools', 'worlds.json'), encoding='utf-8') as _f:
+    WORLDS = {k: v for k, v in json.load(_f).items() if not k.startswith('_')}
 WORLD = os.environ.get('TG_WORLD', 'MountainTop')
 if WORLD not in WORLDS:
     raise SystemExit(f'TG_WORLD={WORLD}: unknown world; one of {", ".join(WORLDS)}')
 SETTINGS = WORLDS[WORLD]
+# MountainTop's assets came first and have no suffix.
 SUFFIX = '' if WORLD == 'MountainTop' else f'_{WORLD}'
 OUT = os.path.join(ROOT, 'Out', 'ue') if not SUFFIX else os.path.join(ROOT, 'Out', 'ue', WORLD)
-HEADING = 18.0   # HeadingAtPlusX and AtlasHeading of both worlds
+HEADING = SETTINGS['heading']   # HeadingAtPlusX and AtlasHeading
+TERRAIN = os.path.splitext(os.path.basename(SETTINGS['ter']))[0]
+# The first terrain's texture kept the name of the first world that used it.
+HEIGHT_TEXTURE = {'prototype2_v2': 'T_TerragenHeight_MountainTop'}.get(TERRAIN, f'T_TerragenHeight_{TERRAIN}')
 
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 MEL = unreal.MaterialEditingLibrary
@@ -272,20 +277,29 @@ def build_render_target(name=None, size=ATLAS_SIZE, fmt=unreal.TextureRenderTarg
     return rt
 
 
-def build_test_map(render_mat, sky_mat, display_mat):
+def build_world_asset(render_mat, sky_mat, display_mat):
+    """DA_TerragenWorld_<World>: what ATerragenSkybox needs to show this world."""
+    factory = unreal.DataAssetFactory()
+    factory.set_editor_property('data_asset_class', unreal.TerragenWorld)
+    asset = get_or_create(f'DA_TerragenWorld_{WORLD}', DEST, unreal.TerragenWorld, factory)
+    asset.set_editor_property('display_name', unreal.Text(SETTINGS.get('display_name', WORLD)))
+    asset.set_editor_property('render_material', render_mat)
+    asset.set_editor_property('sky_render_material', sky_mat)
+    asset.set_editor_property('display_material', display_mat)
+    asset.set_editor_property('terragen_start', unreal.Vector(*SETTINGS['start']))
+    asset.set_editor_property('heading_at_plus_x', HEADING)
+    asset.set_editor_property('atlas_heading', HEADING)
+    asset.set_editor_property('sun_heading', SETTINGS['sun'][0])
+    asset.set_editor_property('sun_altitude', SETTINGS['sun'][1])
+    EAL.save_loaded_asset(asset)
+    return asset
+
+
+def build_test_map(world_asset):
     actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
     level_path = f'{DEST}/TerragenSkyTest{SUFFIX}'
     unreal.EditorLoadingAndSavingUtils.new_blank_map(False)
     sky = actors.spawn_actor_from_class(unreal.TerragenSkybox, unreal.Vector(0, 0, 0))
-    if SUFFIX:
-        # The actor defaults to the MountainTop assets; it creates its material instances and render targets
-        # on first use, so pointing it elsewhere before that is enough.
-        sky.set_editor_property('render_material', render_mat)
-        sky.set_editor_property('sky_render_material', sky_mat)
-        sky.set_editor_property('display_material', display_mat)
-        sky.set_editor_property('terragen_start', unreal.Vector(*SETTINGS['start']))
-        sky.set_editor_property('heading_at_plus_x', HEADING)
-        sky.set_editor_property('atlas_heading', HEADING)
     floor = actors.spawn_actor_from_object(unreal.load_asset('/Engine/BasicShapes/Plane'), unreal.Vector(0, 0, 0))
     floor.set_actor_scale3d(unreal.Vector(200, 200, 1))
     actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0, 0, 120))
@@ -296,6 +310,10 @@ def build_test_map(render_mat, sky_mat, display_mat):
     sun = actors.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(0, 0, 500),
                                         unreal.Rotator(0, -sun_altitude, yaw))
     sun.set_actor_label(f'Sun (Terragen heading {sun_heading:g}, altitude {sun_altitude:g})')
+    # The actor creates its material instances and render targets on first use, so setting the world (which
+    # also turns the light to its sun) before that is enough.
+    sky.set_editor_property('sun_light', sun)
+    sky.set_terragen_world(world_asset)
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     unreal.EditorLoadingAndSavingUtils.save_map(world, level_path)
     log(f'saved {level_path}')
@@ -377,11 +395,11 @@ def sky_pixel(ctx, rt, x, y):
 def main():
     log(f'world {WORLD}')
     # Both worlds use prototype2_v2.ter, so they share the height texture.
-    height = shared_texture(os.path.join(ROOT, 'Textures', 'prototype2_v2_height.png'), 'T_TerragenHeight_MountainTop')
+    height = shared_texture(os.path.join(ROOT, 'Textures', f'{TERRAIN}_height.png'), HEIGHT_TEXTURE)
     noise = shared_texture(os.path.join(ROOT, 'Textures', 'noise128.png'), 'T_TerragenNoise')
     clouds = None
     if SETTINGS['clouds']:
-        clouds = import_texture(os.path.join(ROOT, 'Textures', SETTINGS['clouds']), f'T_TerragenClouds_{WORLD}')
+        clouds = import_texture(os.path.join(ROOT, 'Textures', f'{WORLD}_clouds.png'), f'T_TerragenClouds_{WORLD}')
     # The render target assets are only defaults for the materials' texture parameters; the actor makes its own.
     rt = build_render_target()
     sky_rt = build_render_target(f'RT_TerragenSkyOnly{SUFFIX}', SKY_ATLAS_SIZE)
@@ -389,7 +407,7 @@ def main():
     render_mat = build_render_material(height, noise, clouds, sky_rt, refl_rt)
     sky_mat = build_sky_material(height, clouds)
     display_mat = build_display_material(rt)
-    sky = build_test_map(render_mat, sky_mat, display_mat)
+    sky = build_test_map(build_world_asset(render_mat, sky_mat, display_mat))
     gpu_check(sky)
     log('done')
 

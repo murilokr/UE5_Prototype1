@@ -4,9 +4,11 @@
 #include "GameFramework/Actor.h"
 #include "TerragenSkybox.generated.h"
 
+class ADirectionalLight;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
 class UStaticMeshComponent;
+class UTerragenWorld;
 class UTextureRenderTarget2D;
 
 /**
@@ -27,6 +29,10 @@ class UTextureRenderTarget2D;
  * The actor's location is the Unreal point that corresponds to TerragenStart, i.e. where frame 1 of the old
  * skybox sequence was taken. Moving the camera from there moves the Terragen camera the same distance, in X, Y
  * and Z (or only in Z with FollowHorizontal off, like the old skyboxes).
+ *
+ * Which Terragen world is drawn comes from TerragenWorld (a UTerragenWorld asset, DA_TerragenWorld_<Name>): it
+ * sets the materials and the placement below. Swap it in the details panel, or at run time with
+ * SetTerragenWorld. Without one, the materials and placement are set here directly.
  */
 UCLASS(Blueprintable)
 class PROTOTYPE1_API ATerragenSkybox : public AActor
@@ -37,8 +43,20 @@ public:
 	ATerragenSkybox();
 
 	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual void PostLoad() override;
 	virtual void BeginPlay() override;
 	virtual void Tick(float DeltaSeconds) override;
+#if WITH_EDITOR
+	virtual void PostEditChangeProperty(FPropertyChangedEvent& Event) override;
+#endif
+
+	/**
+	 * Switches to another Terragen world: takes its materials and placement, turns SunLight to its sun and starts
+	 * over, so the next frame redraws everything (a one-off cost of a full redraw). In the editor, press Redraw
+	 * From Actor Location to preview it.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "Terragen Skybox")
+	void SetTerragenWorld(UTerragenWorld* NewWorld);
 
 	/** Terragen coordinates (x, y in grid points, z in height units) of an Unreal location. */
 	UFUNCTION(BlueprintPure, Category = "Terragen Skybox")
@@ -92,16 +110,27 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Terragen Skybox|Debug")
 	static void FinishCompilation();
 
-	/** Material that renders the terrain atlas, filling sky from the sky atlas (M_TerragenRender). */
+	/** The Terragen world to draw. Sets the materials and placement below, which are then read-only. */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox")
+	TObjectPtr<UTerragenWorld> TerragenWorld;
+
+	/**
+	 * Optional: a directional light to turn to the world's sun whenever the world is set. In a game it must be
+	 * Movable (or Stationary) to turn.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
+	TObjectPtr<ADirectionalLight> SunLight;
+
+	/** Material that renders the terrain atlas, filling sky from the sky atlas (M_TerragenRender). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	TSoftObjectPtr<UMaterialInterface> RenderMaterial;
 
 	/** Material that renders the sky-only and reflection atlases (M_TerragenRenderSky). Without it, RenderMaterial must render everything. */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	TSoftObjectPtr<UMaterialInterface> SkyRenderMaterial;
 
 	/** Material on the sky sphere that looks the view direction up in the atlas (M_TerragenSkyDisplay). */
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox")
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	TSoftObjectPtr<UMaterialInterface> DisplayMaterial;
 
 	/** Size of the terrain atlas in pixels, four faces wide; 2048 gives 512-pixel faces. */
@@ -140,12 +169,12 @@ public:
 	float AtmosQuality = 1.f;
 
 	/** Terragen camera position at this actor's location: frame 1 of the old MountainTop sequence. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	FVector TerragenStart = FVector(164.0, 223.0, 45.647);
 
-	/** One Terragen unit (a grid step) in centimetres; the MountainTop terrain uses 15 m. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox", meta = (ClampMin = "1.0"))
-	float CentimetresPerUnit = 1500.f;
+	/** One Terragen unit (a grid step) in centimetres; the MountainTop terrain uses 13.5 m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox", meta = (ClampMin = "1.0", EditCondition = "TerragenWorld == nullptr"))
+	float CentimetresPerUnit = 1350.f;
 
 	/** Move the Terragen camera horizontally with the player too. Off reproduces the old skyboxes, which only climbed. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
@@ -164,11 +193,11 @@ public:
 	float TerrainClearance = 150.f;
 
 	/** Terragen heading (degrees from +y towards +x) seen when looking along Unreal's +X. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	float HeadingAtPlusX = 18.f;
 
 	/** Heading of the atlas's Front face; 18 matches the old skybox frames. */
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))
 	float AtlasHeading = 18.f;
 
 	/** Terrain closer than this many Terragen units is left out, so real level geometry can stand in for it. */
@@ -230,6 +259,8 @@ private:
 		bool AnyDrawn = false;
 	};
 
+	void ApplyWorld(bool TurnSunLight);
+	void ResetDrawing();
 	bool EnsureMaterials();
 	bool MaterialsReady() const;
 	UTextureRenderTarget2D* CreateAtlas(int32 Size, bool FloatingPoint = false) const;

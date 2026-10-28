@@ -3,12 +3,14 @@
 #include "Camera/PlayerCameraManager.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Canvas.h"
+#include "Engine/DirectionalLight.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Skybox/TerragenWorld.h"
 #include "UObject/ConstructorHelpers.h"
 
 #if WITH_EDITOR
@@ -106,10 +108,89 @@ void ATerragenSkybox::OnConstruction(const FTransform& Transform)
 	}
 }
 
+void ATerragenSkybox::PostLoad()
+{
+	Super::PostLoad();
+	// The world asset may have changed since the level was saved.
+	ApplyWorld(false);
+}
+
 void ATerragenSkybox::BeginPlay()
 {
 	Super::BeginPlay();
+	ApplyWorld(true);
 	EnsureMaterials();
+}
+
+#if WITH_EDITOR
+void ATerragenSkybox::PostEditChangeProperty(FPropertyChangedEvent& Event)
+{
+	const FName Name = Event.GetMemberPropertyName();
+	if (Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TerragenWorld) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SunLight))
+	{
+		ApplyWorld(true);
+		ResetDrawing();
+	}
+	else if (Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, RenderMaterial) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyRenderMaterial) ||
+	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, DisplayMaterial) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TerrainAtlasSize) ||
+	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyAtlasSize) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, ReflectionAtlasSize) ||
+	         Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TilesPerFaceSide) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyTilesPerFaceSide))
+	{
+		// The material instances and render targets are made from these; make them again on the next draw.
+		ResetDrawing();
+	}
+	// Reruns construction, which puts the (new) display material on the sphere.
+	Super::PostEditChangeProperty(Event);
+}
+#endif
+
+void ATerragenSkybox::SetTerragenWorld(UTerragenWorld* NewWorld)
+{
+	TerragenWorld = NewWorld;
+	ApplyWorld(true);
+	ResetDrawing();
+	if (UMaterialInterface* Display = DisplayMaterial.LoadSynchronous())
+	{
+		SkyMesh->SetMaterial(0, Display);
+	}
+}
+
+void ATerragenSkybox::ApplyWorld(bool TurnSunLight)
+{
+	if (!TerragenWorld)
+	{
+		return;
+	}
+	RenderMaterial = TerragenWorld->RenderMaterial;
+	SkyRenderMaterial = TerragenWorld->SkyRenderMaterial;
+	if (!TerragenWorld->DisplayMaterial.IsNull())
+	{
+		DisplayMaterial = TerragenWorld->DisplayMaterial;
+	}
+	TerragenStart = TerragenWorld->TerragenStart;
+	CentimetresPerUnit = TerragenWorld->CentimetresPerUnit;
+	HeadingAtPlusX = TerragenWorld->HeadingAtPlusX;
+	AtlasHeading = TerragenWorld->AtlasHeading;
+	if (TurnSunLight && SunLight)
+	{
+		// A Terragen heading H is Unreal yaw H - HeadingAtPlusX; the light points away from the sun.
+		SunLight->SetActorRotation(FRotator(-TerragenWorld->SunAltitude, FRotator::NormalizeAxis(TerragenWorld->SunHeading - HeadingAtPlusX - 180.f), 0.f));
+	}
+}
+
+void ATerragenSkybox::ResetDrawing()
+{
+	// EnsureMaterials makes everything again, and the first draw after it redraws every atlas completely.
+	TerrainMID = nullptr;
+	SkyMID = nullptr;
+	ReflectionMID = nullptr;
+	DisplayMID = nullptr;
+	TerrainTarget = nullptr;
+	SkyTarget = nullptr;
+	ReflectionTarget = nullptr;
+	Terrain = FAtlasState();
+	Sky = FAtlasState();
+	Reflection = FAtlasState();
 }
 
 void ATerragenSkybox::Tick(float DeltaSeconds)
