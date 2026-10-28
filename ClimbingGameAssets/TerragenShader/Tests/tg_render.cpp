@@ -18,7 +18,15 @@
 //
 // Usage: tg_render <height.r16> <noise128.r16> <out dir> [--cam x y z] [--heading deg] [--size n]
 //                  [--faces Front,Left,...] [--atlas] [--clearance c] [--clouds file.r8] [--mask]
-//                  [--sun heading altitude]
+//                  [--sun heading altitude] [--split sky_face_size] [--cloud-quality q] [--atmos-quality q]
+//                  [--refl-face reflection_face_size]
+//
+// --split (with --atlas) renders the way ATerragenSkybox does: a sky-only atlas with faces of sky_face_size
+// (SkyAtlas.bmp, 8-bit, culled where the terrain hides the sky), then the terrain pass filling misses from it
+// (Atlas.bmp), timing each pass. With --refl-face it also renders the reflection-sky atlas (ReflAtlas.bmp shows
+// it tone mapped), which the terrain pass then reads for water reflections; without, those are exact.
+// --cloud-quality and --atmos-quality scale the sky passes' cloud samples and atmosphere steps, as the sky
+// material's CloudQuality and AtmosQuality parameters do.
 
 #include "hlsl_shim.h"
 
@@ -28,6 +36,7 @@
 #include <string>
 #include <thread>
 #include <atomic>
+#include <chrono>
 
 namespace hlsl
 {
@@ -144,6 +153,10 @@ int main(int argc, char** argv)
 	bool atlasMode = false;
 	bool maskMode = false;
 	float clearance = -1.0f;
+	int splitSkyFace = 0;
+	float cloudQuality = 1.0f;
+	float atmosQuality = 1.0f;
+	int reflFace = 0;
 	const char* cloudPath = nullptr;
 	std::string faces = "Front,Left,Back,Right,Up,Down";
 	for (int i = 4; i < argc; i++)
@@ -156,6 +169,10 @@ int main(int argc, char** argv)
 		else if (!std::strcmp(argv[i], "--mask")) { maskMode = true; }
 		else if (!std::strcmp(argv[i], "--clearance") && i + 1 < argc) { clearance = (float)atof(argv[++i]); }
 		else if (!std::strcmp(argv[i], "--clouds") && i + 1 < argc) { cloudPath = argv[++i]; }
+		else if (!std::strcmp(argv[i], "--split") && i + 1 < argc) { splitSkyFace = atoi(argv[++i]); }
+		else if (!std::strcmp(argv[i], "--cloud-quality") && i + 1 < argc) { cloudQuality = (float)atof(argv[++i]); }
+		else if (!std::strcmp(argv[i], "--atmos-quality") && i + 1 < argc) { atmosQuality = (float)atof(argv[++i]); }
+		else if (!std::strcmp(argv[i], "--refl-face") && i + 1 < argc) { reflFace = atoi(argv[++i]); }
 		else if (!std::strcmp(argv[i], "--sun") && i + 2 < argc) { W.SunHeading = (float)atof(argv[i + 1]); W.SunAltitude = (float)atof(argv[i + 2]); i += 2; }
 		else { std::fprintf(stderr, "unknown option %s\n", argv[i]); return 1; }
 	}
@@ -175,16 +192,91 @@ int main(int argc, char** argv)
 		int bad = CheckAtlasRoundTrip(heading, size);
 		int atlas = size * 4;
 		std::vector<uint8_t> rgb(atlas * atlas * 3);
-		ParallelRows(atlas, [&](int y)
+		if (splitSkyFace > 0)
 		{
-			for (int x = 0; x < atlas; x++)
+			// As ATerragenSkybox does it: the sky pass into its own (8-bit) atlas, then the terrain pass, which
+			// fills rays that miss the terrain from that sky atlas.
+			int skyAtlas = splitSkyFace * 4;
+			TGWorld SkyW = TG_SkyQuality(W, cloudQuality, atmosQuality);
+			std::vector<uint16_t> sky((size_t)skyAtlas * skyAtlas * 4);
+			auto t0 = std::chrono::steady_clock::now();
+			ParallelRows(skyAtlas, [&](int y)
 			{
-				float2 uv((x + 0.5f) / atlas, (y + 0.5f) / atlas);
-				float4 c = TG_RenderAtlasTexel(W, HeightTex, NoiseTex, CloudTex, uv, cam, heading, (float)size, 0.0f, clearance);
-				uint8_t* d = &rgb[(y * atlas + x) * 3];
-				d[0] = Quantise(c.x); d[1] = Quantise(c.y); d[2] = Quantise(c.z);
+				for (int x = 0; x < skyAtlas; x++)
+				{
+					float2 uv((x + 0.5f) / skyAtlas, (y + 0.5f) / skyAtlas);
+					float4 c = TG_RenderAtlasTexelSky(SkyW, HeightTex, CloudTex, uv, cam, heading, (float)splitSkyFace, 0.0f, clearance, 0.0f);
+					uint16_t* d = &sky[((size_t)y * skyAtlas + x) * 4];
+					d[0] = (uint16_t)(Quantise(c.x) * 257); d[1] = (uint16_t)(Quantise(c.y) * 257); d[2] = (uint16_t)(Quantise(c.z) * 257); d[3] = 65535;
+				}
+			});
+			auto t1 = std::chrono::steady_clock::now();
+			// The reflection-sky atlas, floating point like the actor's RGBA16f target (half precision is close
+			// enough not to matter here).
+			int reflAtlas = reflFace * 4;
+			std::vector<float> refl((size_t)(reflAtlas > 0 ? reflAtlas * reflAtlas : 1) * 4, 0.0f);
+			if (reflFace > 0)
+			{
+				ParallelRows(reflAtlas, [&](int y)
+				{
+					for (int x = 0; x < reflAtlas; x++)
+					{
+						float2 uv((x + 0.5f) / reflAtlas, (y + 0.5f) / reflAtlas);
+						float4 c = TG_RenderAtlasTexelSky(SkyW, HeightTex, CloudTex, uv, cam, heading, (float)reflFace, 0.0f, clearance, 1.0f);
+						float* d = &refl[((size_t)y * reflAtlas + x) * 4];
+						d[0] = c.x; d[1] = c.y; d[2] = c.z; d[3] = c.w;
+					}
+				});
 			}
-		});
+			auto t2 = std::chrono::steady_clock::now();
+			Texture2D SkyTex{sky.data(), skyAtlas, skyAtlas, 4};
+			Texture2D ReflTex;
+			ReflTex.FloatData = refl.data();
+			ReflTex.Width = ReflTex.Height = reflAtlas > 0 ? reflAtlas : 1;
+			SamplerState SkySampler;
+			ParallelRows(atlas, [&](int y)
+			{
+				for (int x = 0; x < atlas; x++)
+				{
+					float2 uv((x + 0.5f) / atlas, (y + 0.5f) / atlas);
+					float4 c = TG_RenderAtlasTexelComposite(W, HeightTex, NoiseTex, CloudTex, SkyTex, SkySampler, ReflTex, uv, cam, cam, heading, (float)size, (float)splitSkyFace, (float)reflFace, 0.0f, clearance);
+					uint8_t* d = &rgb[(y * atlas + x) * 3];
+					d[0] = Quantise(c.x); d[1] = Quantise(c.y); d[2] = Quantise(c.z);
+				}
+			});
+			auto t3 = std::chrono::steady_clock::now();
+			std::vector<uint8_t> skyRgb((size_t)skyAtlas * skyAtlas * 3);
+			for (size_t i = 0; i < (size_t)skyAtlas * skyAtlas; i++)
+				for (int k = 0; k < 3; k++) skyRgb[i * 3 + k] = (uint8_t)(sky[i * 4 + k] / 257);
+			WriteBmp(outDir + "/SkyAtlas.bmp", skyAtlas, skyAtlas, skyRgb);
+			if (reflFace > 0)
+			{
+				std::vector<uint8_t> reflRgb((size_t)reflAtlas * reflAtlas * 3);
+				for (size_t i = 0; i < (size_t)reflAtlas * reflAtlas; i++)
+				{
+					float3 c = TG_ToneMap(W, float3(refl[i * 4], refl[i * 4 + 1], refl[i * 4 + 2]));
+					reflRgb[i * 3] = Quantise(c.x); reflRgb[i * 3 + 1] = Quantise(c.y); reflRgb[i * 3 + 2] = Quantise(c.z);
+				}
+				WriteBmp(outDir + "/ReflAtlas.bmp", reflAtlas, reflAtlas, reflRgb);
+			}
+			auto ms = [](auto a, auto b) { return std::chrono::duration<double, std::milli>(b - a).count(); };
+			std::printf("sky pass %.0f ms, reflection pass %.0f ms, terrain pass %.0f ms (CPU)\n", ms(t0, t1), ms(t1, t2), ms(t2, t3));
+		}
+		else
+		{
+			auto t0 = std::chrono::steady_clock::now();
+			ParallelRows(atlas, [&](int y)
+			{
+				for (int x = 0; x < atlas; x++)
+				{
+					float2 uv((x + 0.5f) / atlas, (y + 0.5f) / atlas);
+					float4 c = TG_RenderAtlasTexel(W, HeightTex, NoiseTex, CloudTex, uv, cam, heading, (float)size, 0.0f, clearance);
+					uint8_t* d = &rgb[(y * atlas + x) * 3];
+					d[0] = Quantise(c.x); d[1] = Quantise(c.y); d[2] = Quantise(c.z);
+				}
+			});
+			std::printf("full atlas %.0f ms (CPU)\n", std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count());
+		}
 		WriteBmp(outDir + "/Atlas.bmp", atlas, atlas, rgb);
 		std::printf("Atlas done\n");
 		return bad ? 2 : 0;
@@ -195,8 +287,8 @@ int main(int argc, char** argv)
 
 	if (maskMode)
 	{
-		// Visibility only, for camera searches (Tools/find_camera.py): <Face>.mask, one byte per pixel,
-		// 1 = terrain or water.
+		// Visibility only, for camera searches against a reference's sky silhouette: <Face>.mask, one byte
+		// per pixel, 1 = terrain or water.
 		const Face faceSet[] = {{"Front", 0, 0}, {"Left", 90, 0}, {"Back", 180, 0}, {"Right", 270, 0}, {"Up", 270, 90}, {"Down", 270, -90}};
 		for (const Face& face : faceSet)
 		{

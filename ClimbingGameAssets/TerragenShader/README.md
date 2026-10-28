@@ -4,6 +4,9 @@
 - the heightfield surface
 - the surface-layer tree with its coverage and bump texture
 - sun, ambient and soft shadows
+- the atmosphere (haze, blue and red layers, glow, sunlight penetration)
+- the sky dome with the sun disc and the cloud layer, including cloud shadows
+- water with waves, reflections, the sun's reflection and a see-through shallow bed
 - the exposure/tone curve
 
 Terragen rasterises micro-polygons; the shader ray-marches the same surface per pixel instead. Both find the same visible point.
@@ -16,17 +19,23 @@ The same `.ush` also compiles as C++ (`Tests/hlsl_shim.h`), so `Tests/tg_render`
 |---|---|
 | `Shaders/Terragen.ush` | The renderer. Main entry points: `TG_RenderRay`, `TG_ShadeRay`, `TG_CameraRay`. |
 | `Shaders/TerragenUE.ush` | Unreal glue: the skybox cross atlas (same layout as `Scripts/GenerateSkyboxTexture.py`), UE↔Terragen directions, sRGB decode. |
-| `Shaders/Worlds/MountainTop.ush` | Generated from `DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw`: sun, light, water, tone settings and the 5 surface layers. |
+| `Shaders/TerragenPerlin.ush` | Terragen's Perlin tables (`srand(0)` permutation and gradients), for the cloud and wave noise. |
+| `Shaders/Worlds/MountainTop.ush` | Generated from `DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw`: sun, light, water, tone settings and the 5 surface layers. Sky off. |
+| `Shaders/Worlds/Prototype2World.ush` | Generated from `DynamicPrototype2/Prototype2World.tgw`, with the sun and cloud shadows of the `Output/` reference render (see below). Sky, clouds, atmosphere and water on. |
 | `Textures/prototype2_v2_height.png` | Lossless 16-bit heightfield (`.r16` is the same data, raw, for the harness). |
 | `Textures/noise128.png` | Terragen's value-noise lattice: `srand(1)`, 16384 × `rand()`. |
+| `Textures/<World>_clouds.png` | The world's 513² cloud map, 8-bit (value + 128); `.r8` is the same data, raw. |
 | `Tools/ter_convert.py` | `.ter` → height texture + `.json` metadata. |
 | `Tools/make_noise_table.py` | Writes `noise128.png/.r16`. |
+| `Tools/make_perlin_tables.py` | Writes `Shaders/TerragenPerlin.ush`. |
+| `Tools/make_cloud_map.py` | `.tgw` → `<World>_clouds.png/.r8`, generated exactly like Terragen (seed, persistence, feature size). |
 | `Tools/tgw_to_ush.py` | `.tgw` + terrain `.json` → `Shaders/Worlds/<Name>.ush`. |
 | `Tools/unpack_cross.py` | Undoes `Scripts/GenerateSkyboxTexture.py`: splits a 2048² cross back into six faces. |
 | `Tools/compare.py` | Side-by-side images and metrics against Terragen; `--calibrate` fits light scales. |
 | `Tools/ue_setup.py` | Run inside the editor: creates the Unreal assets and test map, renders on the GPU and exports the atlas. |
-| `Tools/ue_view_check.py` | Run inside the editor: six screenshots of the sky from the level viewport. |
-| `Tests/build.cmd` | Builds `Build/tg_render.exe` with MSVC and checks the shaders compile with DXC (SM6.6) and FXC (SM5). |
+| `Tools/ue_view_check.py` | Run inside the editor: six screenshots of the sky from the level viewport, plus a quiet-GPU redraw timing. Takes `TG_WORLD` like `ue_setup.py`; `TG_CULLTEST=1` draws only the tiles the culling picks before each shot. |
+| `Tools/ue_profile.py` | Run inside the editor: times each pass with one feature switched off at a time, to see where the GPU time goes. |
+| `Tests/build.cmd` | Builds `Build/tg_render.exe` (MountainTop) and `Build/tg_render_Prototype2World.exe` with MSVC, and checks the shaders compile with DXC (SM6.6) and FXC (SM5): the sky lookup, the atlas for both worlds, and the exact Custom-node calls of the existing Unreal materials. |
 
 The tools need only a stock Python 3, with no packages.
 
@@ -36,14 +45,27 @@ The tools need only a stock Python 3, with no packages.
 cd ClimbingGameAssets/TerragenShader
 python Tools/ter_convert.py ../DynamicPrototype2/prototype2_v2.ter -o Textures
 python Tools/make_noise_table.py -o Textures
-python Tools/tgw_to_ush.py ../DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw Textures/prototype2_v2.json -o Shaders/Worlds/MountainTop.ush --name MountainTop
+python Tools/make_perlin_tables.py
+python Tools/tgw_to_ush.py ../DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw Textures/prototype2_v2.json -o Shaders/Worlds/MountainTop.ush --name MountainTop --pre-sky
+python Tools/tgw_to_ush.py ../DynamicPrototype2/Prototype2World.tgw Textures/prototype2_v2.json -o Shaders/Worlds/Prototype2World.ush --name Prototype2World --sun 24 48 --cloud-shadows 1
+python Tools/make_cloud_map.py ../DynamicPrototype2/Prototype2World.tgw -o Textures --name Prototype2World
 Tests\build.cmd
 Build\tg_render.exe Textures/prototype2_v2_height.r16 Textures/noise128.r16 Out/frame0001
 python Tools/unpack_cross.py ../Textures/MountainTop/Sky_MountainSide_Alt_0001.png Out/reference 0001
 python Tools/compare.py Out/reference 0001 Out/frame0001
+Build\tg_render_Prototype2World.exe Textures/prototype2_v2_height.r16 Textures/noise128.r16 Out/sky_p2w --cam 198 270 16.43 --heading 18 --clouds Textures/Prototype2World_clouds.r8
+python Tools/compare.py ../Output 0001 Out/sky_p2w
 ```
 
-`tg_render` takes `--cam x y z` (Terragen units), `--heading`, `--size` and `--faces`. For MountainTop frame N, the camera is `164 223 (45.647 + (N-1) * 0.067)`. With `--atlas` it renders the whole 2048² cross through the same function the Unreal material uses, and checks that the sky lookup inverts the atlas exactly.
+`--pre-sky` keeps MountainTop rendering exactly as it was validated before the sky work: the cloud dimming fades in over the cloud depth (the DLL uses the atmosphere step, which would shift MountainTop's frame-1 error by about ±1 level per channel) and the water is a flat lit plane.
+
+`tg_render` takes `--cam x y z` (Terragen units), `--heading`, `--size` and `--faces`. For MountainTop frame N, the camera is `164 223 (45.647 + (N-1) * 0.067)`. With `--atlas` it renders the whole 2048² cross through the same function the Unreal material uses, and checks that the sky lookup inverts the atlas exactly. Sky worlds also take `--clouds <World>_clouds.r8`; `--sun heading altitude` overrides the world's sun, and `--mask` writes visibility masks for camera searches. The world is chosen at compile time (`TG_WORLD_FILE`, see `build.cmd`).
+
+`--split <sky face size>` (with `--atlas`) renders the way `ATerragenSkybox` does, pass by pass (see [How the actor draws](#how-the-actor-draws)). `--refl-face <size>` adds the reflection atlas, and `--cloud-quality` and `--atmos-quality` set the sky passes' quality. The actor's defaults are:
+
+```
+Build\tg_render_Prototype2World.exe Textures/prototype2_v2_height.r16 Textures/noise128.r16 Out/split/p2_actor --atlas --clearance 0.1 --split 256 --refl-face 128 --cloud-quality 0.5 --atmos-quality 0.5 --cam 198 270 16.43 --heading 18 --clouds Textures/Prototype2World_clouds.r8
+```
 
 ## How close it is
 
@@ -59,8 +81,29 @@ Most of the remaining per-pixel error is texture: the coverage speckle and bump 
 
 Findings from the comparison:
 - The renders used **`prototype2_v2.ter`** (flat). The curved `prototype2.ter` matches worse.
-- `Output/*.bmp` holds a different scene (sky, clouds, reflective water). It is not the MountainTop reference.
+- `Output/*.bmp` holds a different scene (sky, clouds, reflective water). It is not the MountainTop reference; it is the sky reference below.
 - The light values taken straight from the `.tgw` are already optimal in display space: sun = `LIGC × STRE`, ambient = `AMBC × BRSC`, exposure = `EXPO`, then tone mode `EXME` with `GAMA`.
+
+### The sky world (Prototype2World)
+
+`ClimbingGameAssets/Output/Sky_<Face>0001..0021.bmp` was rendered from `DynamicPrototype2/Prototype2World.tgw` (its snow and grass layers), on `prototype2_v2.ter`, with the camera at (198, 270, 16.43) heading 18, rising about 0.067 units per frame. The camera comes from matching the sky silhouettes; the mask overlap is 0.96.
+
+Two settings differ from the saved world file, and both were recovered from the render itself:
+- **The sun was at heading 24, altitude 48**, not 119/43. Two independent checks agree: the brightest sky (the glow through the clouds) is centred there, and the terrain shadows match.
+- **"Clouds cast shadows" was on**; the file has it off. Without it, the cloud-shadowed slopes can't be reproduced.
+
+`Worlds/Prototype2World.ush` is generated with those two overrides. Per-channel error against frame 1, all pixels, on a 0–255 scale:
+
+| Face | First sky render (world file's sun, before the cloud-map fixes) | Now |
+|---|---|---|
+| Front | 71–113 | 29–45 |
+| Left | 31–53 | 23–29 |
+| Back | 45–71 | 19–21 |
+| Right | 78–113 | 21–24 |
+| Up | 74–125 | 18–22 |
+| Down | 72–99 | 22–26 |
+
+Most of what's left is the cloud pattern. The cloud map is generated exactly; its gaps line up with Terragen's in the Left, Back and Right faces. But the overhead clouds come out thicker than Terragen's, and they sit about one cell off (shifting the map by roughly (−8, +12) units lowers the error by about 3 levels; Terragen has a cloud scroll, `SetCloudLayerScroll`, which the world file doesn't store). Where the clouds are, the shadows are, so the near terrain in the Front face inherits the difference.
 
 ## What is exact and what is not
 
@@ -72,17 +115,30 @@ Findings from the comparison:
 - layer coverage: the sigmoid, altitude and slope penalties, and the level of detail
 - tone modes 0, 1 and 2 (`RGBm` and the buffer pass), with Terragen's 16-bit and 8-bit quantisation in the harness
 - the camera: focal length = zoom × width / 2, heading from +y towards +x
+- the atmosphere march (`0x1001a350`, `0x1001a730`, `0x1001aad0`): red decay, blue in-scatter and haze per step, with the grid-edge split
+- the sunlight penetration table (`0x10019b50`), as a closed-form geometric sum instead of a 24 000-entry table
+- the glow (`0x1001b450`)
+- the sky dome sphere (`0x1001e0d0`) and the sun disc with its corona (`0x1001d430`)
+- the cloud map (`0x1001ca60`, `0x1001cc30`, and the exe's own generation loop): the midpoint displacement, `rand()` order, char wrap-around, and `GFSZ` as a 16-bit level offset
+- cloud density, slab and march (`0x1001cd40`, `0x1001cec0`, `0x1001d020`), both render methods, with the Perlin tables, turbulence and fBm (`0x10020b00`–`0x10020e80`)
+- cloud shadows (`0x1001a100`, `0x1001be60`, `0x1001c560`): a grid one atmosphere step apart, smoothstep-blended, averaged along atmosphere steps
+- water (`0x10034ce0`, `0x10035020`, `0x10035fd0`, `0x10036280`): wave turbulence, the reflection with its reflectivity curve, the sun lobe, refraction to the bed with per-channel absorption
 
 **Approximations:**
 - The jitter that offsets coverage and bump samples is a PCG hash, not Terragen's table.
 - The bump amplitude reads a per-point map that wasn't identified. `BumpTerrainValue = 0.25` stands in for it.
 - The footprint used for detail is distance × pixel angle / Detail.
 - In multi-directional background light, the away/sun-side colours are guessed (`SDSC`). MountainTop uses single colour, so it isn't affected.
+- Terragen shades the sky and water as micro-polygons. Here they are shaded once per pixel, so:
+  - the sky's noise footprint is one pixel (Terragen's polygons are about 1–4 pixels);
+  - water takes one sample, where Terragen averages `WAQU` jittered samples.
+- The cloud marches take 64 segments (`--cloud-samples`) of Terragen's 4096 steps; within each segment the slab coverage is exact.
+- Penetration table: the sun-path factor `--sun-path-scale` comes from a GUI value that wasn't decoded; 1 is assumed.
 
-**Not implemented yet:**
-- the atmosphere (haze, blue and red layers). It's zero in MountainTop, so it doesn't show there.
-- the sky dome, clouds and sun disc. The sky is off in MountainTop.
-- water reflections and waves. MountainTop's water is opaque black.
+**Not implemented:**
+- atmospheric shadows from terrain (Terragen skips them too whenever the camera is inside the terrain grid);
+- water surf and foam (`SFDN` and the rest), the wave-strength pattern (`WVAR`), and curved water;
+- the cloud scroll (`SetCloudLayerScroll`), which is 0 unless clouds were animated.
 
 **Known difference:** at higher frames, Terragen's distant outlines sit 1–3 px higher. The cause isn't identified; Terragen's sub-cell geometry is a candidate.
 
@@ -93,8 +149,22 @@ Findings from the comparison:
 | Where | What |
 |---|---|
 | `Source/TerragenShaders/` | Module loaded at `PostConfigInit` that maps `/TerragenShaders` to this folder's `Shaders`, so materials can include the `.ush` files. Listed in `Prototype1.uproject` and both `*.Target.cs`. |
-| `Source/Prototype1/.../Skybox/TerragenSkybox.h/.cpp` | `ATerragenSkybox`: renders the atlas and shows it on a sky sphere around the camera. |
-| `/Game/MyStuff/Skybox/Terragen/` | `M_TerragenRender` (Custom node calling `TG_RenderAtlasTexel`), `M_TerragenSkyDisplay` (looks the view direction up in the atlas), `RT_TerragenSky` (2048², RGBA8 linear), `Textures/T_TerragenHeight_MountainTop` and `T_TerragenNoise` (G16, no mips, never streamed), and the `TerragenSkyTest` map. |
+| `Source/Prototype1/.../Skybox/TerragenSkybox.h/.cpp` | `ATerragenSkybox`: renders the atlases and shows them on a sky sphere around the camera. |
+| `/Game/MyStuff/Skybox/Terragen/` | `M_TerragenRender` (the terrain pass, a Custom node calling `TG_RenderAtlasTexelComposite`), `M_TerragenRenderSky` (the sky and reflection-sky passes, `TG_RenderAtlasTexelSky`), `M_TerragenSkyDisplay` (looks the view direction up in the atlas), `Textures/T_TerragenHeight_MountainTop` and `T_TerragenNoise` (G16, no mips, never streamed), and the `TerragenSkyTest` map. `RT_TerragenSky`, `RT_TerragenSkyOnly` and `RT_TerragenReflSky` are only the materials' default inputs; the actor makes its own render targets at run time. |
+
+### How the actor draws
+
+The cost is per pixel, so the actor splits the picture by how fast each part changes and draws only what is out of date:
+
+| Atlas | Size | What | Redrawn |
+|---|---|---|---|
+| Sky | 1024² (256-px faces), RGBA8 | Sky, clouds and sun. Directions more than 5° below the horizon whose ray reaches the lowest ground (or the water) well inside the grid are skipped: the terrain always hides them. | When the camera has moved `SkyRedrawDistance` (20 m), `SkyTilesPerFrame` tiles a frame |
+| Reflection | 512² (128-px faces), RGBA16f | The sky the water reflects, from water level below the camera, in linear colour. The terrain pass aims each lookup at the dome point its reflection really meets, so the clouds stay in place. | Like the sky, a face a frame |
+| Terrain | 2048² (512-px faces), RGBA8 | Terrain and water. Rays that miss the terrain take the sky atlas's colour, so this atlas is the whole picture the sky sphere shows. | When the camera has moved 5 cm, in 128-px tiles: the ones in the player camera's view first (most out of date first), then the rest, nearest the view first, up to `TerrainTilesPerFrame` |
+
+Visibility is a cone test per tile against the camera's view (half its diagonal field of view, plus `CullingMargin`). A 90° 16:9 view sees about 40 of the 96 terrain tiles, so with the default budget of 48 the whole view is redrawn every frame. A sky or reflection redraw marks the terrain tiles it affects as out of date.
+
+Against a full render of every pixel, the split costs nothing visible: MountainTop is identical, and Prototype2World is within 3 levels per channel (from the reflection atlas and the halved cloud samples), with an unchanged error against Terragen. The sky cull is lossless, but saves little here: the skipped directions mostly miss the cloud map, and those were cheap already.
 
 ### Using it
 
@@ -106,8 +176,14 @@ Place an **ATerragenSkybox** where frame 1 of the old skybox was taken. That's t
 | `KeepAboveTerrain`, `TerrainClearance` | on, 150 cm | Where your level and the Terragen terrain don't line up, the player can be below the Terragen ground. This lifts the Terragen camera to the clearance above the ground (or water) there, instead of rendering the inside of the terrain. |
 | `HeadingAtPlusX` | 18 | Which Terragen heading Unreal +X looks at. 18 puts the old Front face along +X. |
 | `StartDistance` | 0 | Leaves out terrain nearer than this many Terragen units, so real level geometry can stand in for it. |
-| `RedrawDistance` | 100 cm | Camera movement before a face is redrawn; the old frames were 1 m apart. |
-| `FacesPerFrame` | 1 | Faces redrawn per frame. The very first draw always does all six. |
+| `TerrainAtlasSize`, `TilesPerFaceSide` | 2048, 4 | The terrain atlas: 512-px faces in 128-px tiles. On a 1080p screen a 90° view spreads each texel over about 4 pixels, which is the softness you see; 4096 (with 8 tiles per side) is sharper and costs about 3.5× as much per frame. |
+| `SkyAtlasSize`, `SkyTilesPerFaceSide` | 1024, 2 | The sky atlas. The sky is soft, so it can be smaller. |
+| `ReflectionAtlasSize` | 512 | The reflection atlas. 0 computes every reflection exactly in the terrain pass instead. |
+| `CloudQuality`, `AtmosQuality` | 0.5, 1 | Scale the sky passes' cloud samples and atmosphere steps (1 = the world's own). CloudQuality 0.5 stays within 2 levels. AtmosQuality 0.5 is Terragen's atmosphere accuracy one notch lower, which also coarsens the cloud-shadow grid: about 40% off the sky pass, but the sky under the clouds comes out up to 10 levels brighter. |
+| `TerrainRedrawDistance` | 5 cm | Camera movement before a terrain tile is redrawn. |
+| `SkyRedrawDistance` | 20 m | Camera movement before a sky or reflection tile is redrawn. |
+| `TerrainTilesPerFrame`, `SkyTilesPerFrame`, `ReflectionFacesPerFrame` | 48, 2, 1 | Budgets per frame. The very first draw always does everything. |
+| `CullingMargin` | 5° | Extra angle around the view when deciding which tiles it can see. |
 | `SkyRadius` | 10 km | Radius of the sky sphere. Level geometry beyond it is hidden. |
 
 In the editor, the **Redraw From Actor Location** button on the actor previews the sky.
@@ -124,6 +200,17 @@ UnrealEditor.exe Prototype1.uproject -EnablePlugins=PythonScriptPlugin,EditorScr
 
 The last option stops the editor reopening last session's asset tabs. With those tabs open, an offscreen editor crashed on exit in the Skeletal Mesh editor; it didn't affect the assets.
 
+To build the sky world instead, set `TG_WORLD=Prototype2World` for that run. It adds assets with a `_Prototype2World` suffix:
+- `M_TerragenRender_Prototype2World` and `M_TerragenRenderSky_Prototype2World`, with a `CloudTex` input whose default is `Textures/T_TerragenClouds_Prototype2World`
+- `M_TerragenSkyDisplay_Prototype2World` and the default render targets
+- the `TerragenSkyTest_Prototype2World` map, with an `ATerragenSkybox` pointed at those assets
+
+It also exports `Out/ue/Prototype2World/`. The MountainTop assets are left alone: the height and noise textures are shared, and only imported if missing. To use the sky world in another level, set a placed actor's `RenderMaterial`, `SkyRenderMaterial` and `DisplayMaterial` to those assets, and `TerragenStart` to (198, 270, 16.43).
+
+Both runs also time each pass on the GPU and write `timing.txt` next to the exported atlases.
+
+Shader cost: the CPU harness renders the full 2048² atlas in 2.0 s for MountainTop and 3.2 s for Prototype2World (24 threads). FXC compiles the Prototype2World material in about 30 s, DXC in 1 s.
+
 ### Verified on this machine
 
 | Check | Result |
@@ -134,6 +221,14 @@ The last option stops the editor reopening last session's asset tabs. With those
 | Following the player: 300 m along Unreal +X, and 1 km below the start (lifted above the ground) | Unreal→Terragen mapping exact; GPU vs CPU overlap 1.000 on every face, colour within 2.3 levels |
 | Builds | Development and DebugGame editor targets. The game target too, with one caveat below |
 | Cost of a full six-face redraw of the 2048² atlas, RTX 4060 Ti | 30 ms on an idle GPU (about 5 ms per face); 59 ms while a game was also using the GPU |
+| Sky world (`TG_WORLD=Prototype2World`): GPU atlas vs the CPU harness | Colour within 1.7 levels per channel, identical face averages |
+| Sky world: GPU atlas vs Terragen (`Output/Sky_*0001.bmp`) | Error 18–45 levels per channel, the same as the CPU harness |
+| Sky world: full six-face redraw, idle RTX 4060 Ti | 148 ms, about 5× MountainTop (about 25 ms per face) |
+| Sky world: level-viewport screenshots (`TG_WORLD=Prototype2World` with `ue_view_check.py`) | Sky, clouds, haze and rippled water all render; the image is brighter than Terragen's because UE's tonemapper runs on top |
+| Split rendering with the actor's defaults (sky, reflection and terrain atlases), GPU vs the CPU harness `--split 256 --refl-face 128 --cloud-quality 0.5` | MountainTop within 1.1 levels, Prototype2World within 1.8; error against Terragen unchanged (MountainTop overlap 0.996, Prototype2World 20–45) |
+| Cost per pass on an idle RTX 4060 Ti, Prototype2World (MountainTop) | Visible terrain tiles of a 90° 16:9 view, the per-frame cost while moving: 11.5 ms (8.1 ms). Whole terrain atlas 33 ms (23 ms). Whole sky atlas 86 ms, about 3.6 ms a tile; whole reflection atlas 35 ms, about 6 ms a face; both only while catching up after 20 m of movement |
+| The same view with reflections computed exactly (`ReflectionAtlasSize` 0) | 29 ms; the whole terrain atlas 98 ms |
+| The same view with a 4096 terrain atlas | 40.5 ms (28.5 ms) |
 
 ### Things to know
 

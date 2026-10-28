@@ -73,16 +73,38 @@ inline float3 cross(float3 a, float3 b) { return float3(a.y * b.z - a.z * b.y, a
 inline float length(float3 a) { return sqrt(dot(a, a)); }
 inline float3 normalize(float3 a) { return a / length(a); }
 
-// A Texture2D handle over 16-bit texels, returned normalised like a UNORM16 texture.
+// A Texture2D handle over 16-bit texels, returned normalised like a UNORM16 texture, or over float RGBA texels
+// (FloatData) like a floating-point render target.
 struct SamplerState {};
 struct Texture2D
 {
 	const uint16_t* Data = nullptr;
 	int Width = 0, Height = 0;
+	int Channels = 1;   // 1 (greyscale, in x) or 4 (RGBA, interleaved)
+	const float* FloatData = nullptr;
 	float4 Load(int3 p) const
 	{
 		int x = clamp(p.x, 0, Width - 1), y = clamp(p.y, 0, Height - 1);
-		return float4(Data[y * Width + x] / 65535.0f, 0.0f, 0.0f, 1.0f);
+		if (FloatData)
+		{
+			const float* f = FloatData + (size_t)(y * Width + x) * 4;
+			return float4(f[0], f[1], f[2], f[3]);
+		}
+		const uint16_t* t = Data + (size_t)(y * Width + x) * Channels;
+		if (Channels == 1)
+			return float4(t[0] / 65535.0f, 0.0f, 0.0f, 1.0f);
+		return float4(t[0] / 65535.0f, t[1] / 65535.0f, t[2] / 65535.0f, t[3] / 65535.0f);
+	}
+	// Bilinear with clamped addressing, like the render targets the shader samples.
+	float4 SampleLevel(SamplerState, float2 uv, float) const
+	{
+		float fx = uv.x * Width - 0.5f, fy = uv.y * Height - 0.5f;
+		int x0 = (int)std::floor(fx), y0 = (int)std::floor(fy);
+		float ax = fx - x0, ay = fy - y0;
+		float4 a = Load(int3(x0, y0, 0)), b = Load(int3(x0 + 1, y0, 0));
+		float4 c = Load(int3(x0, y0 + 1, 0)), d = Load(int3(x0 + 1, y0 + 1, 0));
+		auto mix = [](float4 p, float4 q, float t) { return float4(p.x + (q.x - p.x) * t, p.y + (q.y - p.y) * t, p.z + (q.z - p.z) * t, p.w + (q.w - p.w) * t); };
+		return mix(mix(a, b, ax), mix(c, d, ax), ay);
 	}
 };
 }  // namespace hlsl

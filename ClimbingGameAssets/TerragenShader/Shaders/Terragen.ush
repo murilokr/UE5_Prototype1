@@ -9,8 +9,8 @@
 // also one grid step (scale_m metres, from the .ter). +z is up; heading 0 looks along +y, 90 along +x.
 //
 // Also covered: the atmosphere (haze, blue and red layers with the sunlight penetration table), the sky
-// dome with the sun disc and the cloud layer (cloud map from Tools/make_cloud_map.py). Water is shaded
-// flat with an approximate reflection; Terragen's waves, surf and exact reflectivity curve are not ported.
+// dome with the sun disc and the cloud layer and its shadows (cloud map from Tools/make_cloud_map.py), and
+// water with waves, reflection, the sun's reflection and the bed seen through it. Not ported: surf.
 //
 // This file is also compiled as C++ by Tests/tg_render.cpp (through Tests/hlsl_shim.h), so it sticks
 // to a shared subset: no swizzles, no out/inout parameters, float literals written as floats. Include
@@ -21,6 +21,24 @@
 
 #ifndef TG_LOOP
 #define TG_LOOP [loop]
+#endif
+
+// Profiling switches (Tools/ue_profile.py sets them through a Custom node's Additional Defines); all off by
+// default, which is the renderer as described here.
+#ifndef TG_PROFILE_NO_WAVES
+#define TG_PROFILE_NO_WAVES 0        // flat water normal (no wave turbulence)
+#endif
+#ifndef TG_PROFILE_WATER_TRACES
+#define TG_PROFILE_WATER_TRACES 3    // 1: no reflection or bed; 2: reflection but no bed
+#endif
+#ifndef TG_PROFILE_NO_REFL_SKY
+#define TG_PROFILE_NO_REFL_SKY 0     // reflections that miss the terrain show nothing
+#endif
+
+// FXC warns (X3557) when it can tell that a [loop] runs once for the world compiled in, such as the water's
+// extra traces in a world with flat water. That is expected; the loops keep one copy of each big function.
+#if !defined(__cplusplus) && !defined(__HLSL_VERSION)
+#pragma warning(disable : 3557)
 #endif
 
 #define TG_MAX_LAYERS 8
@@ -143,10 +161,18 @@ struct TGWorld
 	float Exposure;             // multiplies linear colour before the tone curve
 	float BumpTerrainValue;     // stand-in for a per-point map the bump amplitude reads (see TG_BumpAmplitude)
 	float3 BackgroundColour;    // shown where no terrain, water or sky is hit
-	float WaterReflectivity;    // approximate water reflection (see TG_ShadeWater); 0 = none
-	float WaterReflMinAngle;    // MINR, radians from the vertical
-	float WaterReflMaxAngle;    // MAXR
+	float WaterShading;         // 1 Terragen's water (TG_WaterSurface); 0 the flat lit plane of the pre-sky renderer
+	float WaterWaveSize;        // WLEN, terrain units
+	float WaterWaveAmp;         // WAMP * WLEN
+	float WaterWaveTime;        // third wave-noise coordinate: (frame / 24) / WLEN / scale
+	float WaterViscosity;       // VISC * WAMP: pulls the reflection cosine towards 1
+	float WaterReflMin;         // MINR: reflectivity looking straight down
+	float WaterReflMax;         // MAXR: reflectivity at grazing angles
 	float WaterReflCurve;       // RCRV
+	float WaterSunLobe;         // RSLB: sun reflection strength
+	float WaterSunWidth;        // RSLS: sun reflection width, radians
+	float3 WaterAbsorb;         // per terrain unit, from TRNC * TRNS
+	float WaterMaxDepth;        // the bed shows through up to this far below the surface, terrain units
 	TGAtmosphere Atmos;
 	TGSky Sky;
 	int NumLayers;
@@ -678,6 +704,23 @@ float TG_Fbm2(float x, float y, float limit)
 	return sum;
 }
 
+// Turbulence (0x10020c10) on noise3, octave weights 1/frequency; Terragen's water waves.
+float TG_Turbulence3(float x, float y, float z, float limit)
+{
+	float sum = 0.0;
+	if (limit < 1.0)
+	{
+		return sum;
+	}
+	float f = 1.0;
+	TG_LOOP for (int i = 0; i < 32 && f <= limit; i++)
+	{
+		sum += (abs(TG_PerlinNoise3(x * f, y * f, z * f)) - 0.225) / f;
+		f *= 1.7;
+	}
+	return sum;
+}
+
 // fBm (0x10020ca0) on noise3, octave weights 1/sqrt(frequency).
 float TG_Fbm3(float x, float y, float z, float limit)
 {
@@ -883,9 +926,14 @@ float TG_CloudShadow(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, floa
 		float fy = sv - (float)j;
 		float wx = (3.0 - 2.0 * fx) * fx * fx;
 		float wy = (3.0 - 2.0 * fy) * fy * fy;
-		float t0 = lerp(TG_CloudShadowNode(W, CloudTex, i, j, slant), TG_CloudShadowNode(W, CloudTex, i + 1, j, slant), wx);
-		float t1 = lerp(TG_CloudShadowNode(W, CloudTex, i, j + 1, slant), TG_CloudShadowNode(W, CloudTex, i + 1, j + 1, slant), wx);
-		sum += lerp(t0, t1, wy);
+		// The four nodes in a loop, so the node lookup is compiled once.
+		TG_LOOP for (int c = 0; c < 4; c++)
+		{
+			int di = c == 1 || c == 3 ? 1 : 0;
+			int dj = c >= 2 ? 1 : 0;
+			float weight = (di == 1 ? wx : 1.0 - wx) * (dj == 1 ? wy : 1.0 - wy);
+			sum += TG_CloudShadowNode(W, CloudTex, i + di, j + dj, slant) * weight;
+		}
 		su += du;
 		sv += dv;
 	}
@@ -1113,17 +1161,19 @@ float3 TG_Atmosphere(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, floa
 	if (c3 >= 0.0) { float f = (n - p0.y) / dy; lo = min(lo, f); hi = max(hi, f); }
 	lo = max(lo, 0.0);
 	hi = min(hi, 1.0);
-	if (hi <= lo)
+	// Far to near: [hi, 1], [lo, hi], [0, lo]; one march call in a loop keeps the shader small.
+	bool split = hi > lo;
+	float3 pe = lerp(p0, p1, lo);
+	float3 px = lerp(p0, p1, hi);
+	TG_LOOP for (int k = 0; k < 3; k++)
 	{
-		colour = TG_AtmosMarch(W, CloudTex, S, p0, p1, glow, 1.0, colour);
-	}
-	else
-	{
-		float3 pe = lerp(p0, p1, lo);
-		float3 px = lerp(p0, p1, hi);
-		if (hi < 1.0) { colour = TG_AtmosMarch(W, CloudTex, S, px, p1, glow, 1.0, colour); }
-		colour = TG_AtmosMarch(W, CloudTex, S, pe, px, glow, 1.0, colour);
-		if (lo > 0.0) { colour = TG_AtmosMarch(W, CloudTex, S, p0, pe, glow, 1.0, colour); }
+		bool use = split ? (k == 0 ? hi < 1.0 : (k == 1 ? true : lo > 0.0)) : k == 1;
+		if (use)
+		{
+			float3 a = split ? (k == 0 ? px : (k == 1 ? pe : p0)) : p0;
+			float3 b = split ? (k == 0 ? p1 : (k == 1 ? px : pe)) : p1;
+			colour = TG_AtmosMarch(W, CloudTex, S, a, b, glow, 1.0, colour);
+		}
 	}
 	return colour;
 }
@@ -1132,8 +1182,9 @@ float3 TG_Atmosphere(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, floa
 
 // Sky dome point (0x1001d430): sun disc, the atmosphere above the cloud layer, the cloud, then the atmosphere
 // from the camera. dome is the point on the dome sphere, (u, v) its cloud-map coordinates, footprint the
-// pixel's size in map cells.
-float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float3 dome, float u, float v, float footprint)
+// pixel's size in map cells. sunDisc = 0 leaves the disc out, as the water reflection (0x10035fd0) does.
+float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float3 dome, float u, float v, float footprint,
+                   float sunDisc)
 {
 	float3 d = dome - cam;
 	float3 dn = normalize(d);
@@ -1142,7 +1193,7 @@ float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float
 	float3 colour = float3(0.0, 0.0, 0.0);
 
 	float r = W.SunDiameter * 0.008726646;
-	if (r > 0.0)
+	if (r > 0.0 && sunDisc != 0.0)
 	{
 		float a = acos(clamp(cosA, -1.0, 1.0));
 		float f = 1.0 / (r * r);
@@ -1173,6 +1224,7 @@ float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float
 	view.Tau = 0.0;
 	view.Hit = float3(0.0, 0.0, 0.0);
 	view.HasHit = 0.0;
+	float3 dir2 = float3(S.Dir.x - dn.x, S.Dir.y - dn.y, S.Dir.z);
 	if (marched == 0.0)
 	{
 		float above = W.CloudAltitude - cam.z;
@@ -1180,28 +1232,36 @@ float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float
 		float c = max(TG_CloudDensity(W, CloudTex, u, v, 1.0 / footprint) + W.Sky.CloudBias, 0.0);
 		tau = sqrt(c * 0.00390625) * W.Sky.CloudContrast * c * slant * W.CloudDepth;
 	}
-	else
-	{
-		float limit = min(W.Sky.CloudStepsMax, W.Sky.CloudNoiseLimit / footprint);
-		view = TG_CloudMarch(W, CloudTex, su, sv, startZ, footprint, dn, W.Sky.CloudStepsMax, limit, 1.0);
-		tau = view.Tau;
-	}
 	float transmit = pow(0.99, tau);
 	float glow2 = TG_Glow(W, cosA, transmit, 1.0);
-	if (marched != 0.0)
+	// Marched: the view march (k = 0), then the light march from where it first met cloud. Map method: only
+	// the light march. One march call in a loop keeps the shader small.
+	TG_LOOP for (int k = 0; k < 2; k++)
 	{
-		if (view.HasHit != 0.0)
+		bool run = k == 0 ? marched != 0.0 : (marched == 0.0 || view.HasHit != 0.0);
+		if (run)
 		{
-			TGCloudMarch toSun = TG_CloudMarch(W, CloudTex, view.Hit.x, view.Hit.y, view.Hit.z, footprint, S.Dir,
-			                                   W.Sky.CloudStepsMax, W.Sky.CloudSteps, 1.0);
-			light = pow(0.99, toSun.Tau * W.Sky.CloudDarkness) * glow2;
+			float3 mp = k == 1 && marched != 0.0 ? view.Hit : float3(su, sv, startZ);
+			float3 md = k == 0 ? dn : (marched != 0.0 ? S.Dir : dir2);
+			float mSteps = k == 0 || marched != 0.0 ? W.Sky.CloudStepsMax : W.Sky.CloudSteps;
+			float mLimit = k == 0 ? min(W.Sky.CloudStepsMax, W.Sky.CloudNoiseLimit / footprint) : (marched != 0.0 ? W.Sky.CloudSteps : 0.0);
+			TGCloudMarch m = TG_CloudMarch(W, CloudTex, mp.x, mp.y, mp.z, footprint, md, mSteps, mLimit, marched);
+			if (k == 0)
+			{
+				view = m;
+				tau = m.Tau;
+				transmit = pow(0.99, tau);
+				glow2 = TG_Glow(W, cosA, transmit, 1.0);
+			}
+			else if (marched != 0.0)
+			{
+				light = pow(0.99, m.Tau * W.Sky.CloudDarkness) * glow2;
+			}
+			else
+			{
+				light = pow(0.99, m.Tau * slant / sqrt(dir2.x * dir2.x + dir2.y * dir2.y + 1.0) * W.Sky.CloudDarkness);
+			}
 		}
-	}
-	else
-	{
-		float3 dir2 = float3(S.Dir.x - dn.x, S.Dir.y - dn.y, S.Dir.z);
-		TGCloudMarch toSun = TG_CloudMarch(W, CloudTex, su, sv, startZ, footprint, dir2, W.Sky.CloudSteps, 0.0, 0.0);
-		light = pow(0.99, toSun.Tau * slant / sqrt(dir2.x * dir2.x + dir2.y * dir2.y + 1.0) * W.Sky.CloudDarkness);
 	}
 	float3 sunT = TG_SunTransmittance(W, W.CloudAltitude) *
 	              TG_CloudSunFactor(W, CloudTex, S, dome, W.CloudAltitude, dome, W.CloudAltitude);
@@ -1212,10 +1272,10 @@ float3 TG_ShadeSky(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 cam, float
 	return TG_Atmosphere(W, CloudTex, S, cam, dome, glow, colour);
 }
 
-// The sky seen along a ray that hit no terrain: the dome sphere (0x1001e0d0) is centred under the grid
-// centre with radius 32 * terrain size, its top at the cloud altitude, and covers the cloud map's extent.
-// Returns rgb and, in w, 1 if the dome was hit.
-float4 TG_SkyRay(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D, float PixelAngle)
+// Where a ray (D normalised) leaves the dome sphere (0x1001e0d0), which is centred under the grid centre with
+// radius 32 * terrain size and its top at the cloud altitude. Returns the point and, in w, the distance along
+// the ray, or w = -1 for no hit.
+float4 TG_DomeHit(TGWorld W, float3 O, float3 D)
 {
 	float R = W.Sky.DomeRadius;
 	float3 C = float3((float)W.Terrain.Cells * 0.5, (float)W.Terrain.Cells * 0.5, W.CloudAltitude - R);
@@ -1223,16 +1283,28 @@ float4 TG_SkyRay(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D,
 	float b = dot(oc, D);
 	float c = dot(oc, oc) - R * R;
 	float disc = b * b - c;
-	if (disc < 0.0)
-	{
-		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
-	}
-	float t = -b + sqrt(disc);
+	float t = disc < 0.0 ? -1.0 : -b + sqrt(disc);
 	if (t <= 0.0)
 	{
-		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
+		return float4(O.x, O.y, O.z, -1.0);
 	}
 	float3 P = O + D * t;
+	return float4(P.x, P.y, P.z, t);
+}
+
+// The sky seen along a ray that hit no terrain: the dome (TG_DomeHit), which covers the cloud map's extent.
+// The cloud footprint follows from PixelAngle, or is fixedFootprint (map cells) when that is positive.
+// Returns rgb and, in w, 1 if the dome was hit.
+float4 TG_SkyDome(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D, float PixelAngle, float fixedFootprint,
+                  float sunDisc)
+{
+	float4 hit = TG_DomeHit(W, O, D);
+	if (hit.w < 0.0)
+	{
+		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
+	}
+	float t = hit.w;
+	float3 P = float3(hit.x, hit.y, hit.z);
 	float margin = (W.Sky.CloudExtent - (float)W.Terrain.Cells) * 0.5;
 	float u = (P.x + margin) / W.Sky.CloudCell;
 	float v = (P.y + margin) / W.Sky.CloudCell;
@@ -1240,9 +1312,14 @@ float4 TG_SkyRay(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D,
 	{
 		return float4(W.BackgroundColour.x, W.BackgroundColour.y, W.BackgroundColour.z, 0.0);
 	}
-	float footprint = max(t * PixelAngle / max(W.Detail, 0.01) / W.Sky.CloudCell, 0.001);
-	float3 sky = TG_ShadeSky(W, CloudTex, S, O, P, u, v, footprint);
+	float footprint = fixedFootprint > 0.0 ? fixedFootprint : max(t * PixelAngle / max(W.Detail, 0.01) / W.Sky.CloudCell, 0.001);
+	float3 sky = TG_ShadeSky(W, CloudTex, S, O, P, u, v, footprint, sunDisc);
 	return float4(sky.x, sky.y, sky.z, 1.0);
+}
+
+float4 TG_SkyRay(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 O, float3 D, float PixelAngle)
+{
+	return TG_SkyDome(W, CloudTex, S, O, D, PixelAngle, 0.0, 1.0);
 }
 
 // ---------------------------------------------------------------- tone curve
@@ -1429,6 +1506,143 @@ TGHit TG_Trace(TGWorld W, Texture2D HeightTex, float3 O, float3 D, float tStart)
 	return hit;
 }
 
+// ---------------------------------------------------------------- camera and atlas
+
+// Terragen's camera (0x1002c910, ReceiveRender): focal length = zoom * width / 2, heading measured from
+// +y towards +x, pitch up positive. Pixel is the pixel centre, row 0 at the top.
+float3 TG_CameraRay(float HeadingDeg, float PitchDeg, float Zoom, float2 Pixel, float2 ImageSize)
+{
+	float h = HeadingDeg * TG_DEG;
+	float p = PitchDeg * TG_DEG;
+	float3 F = float3(sin(h) * cos(p), cos(h) * cos(p), sin(p));
+	float3 Rt = float3(cos(h), -sin(h), 0.0);
+	float3 U = cross(Rt, F);
+	float focal = Zoom * ImageSize.x * 0.5;
+	float sx = (Pixel.x - ImageSize.x * 0.5) / focal;
+	float sy = (ImageSize.y * 0.5 - Pixel.y) / focal;
+	return F + Rt * sx + U * sy;
+}
+
+// The skybox cross atlas, exactly the layout of Scripts/GenerateSkyboxTexture.py. With face size S it is
+// 4S x 4S: Back (0, 1.5S), Left (S, 1.5S), Front (2S, 1.5S), Right (3S, 1.5S), mirrored left-right; Up (S, 0.5S)
+// and Down (S, 2.5S), mirrored top-bottom. Faces look at AtlasHeading + 0/90/180/270 degrees (Front, Left,
+// Back, Right); Up and Down use +270, like GenSkyboxAnimation.tgs.
+struct TGAtlasFace
+{
+	float HeadingOffset;
+	float Pitch;
+	float2 Origin;    // top-left corner, in face sizes
+	bool MirrorX;
+	bool MirrorY;
+};
+
+// Face order: 0 Front, 1 Left, 2 Back, 3 Right, 4 Up, 5 Down.
+TGAtlasFace TG_GetAtlasFace(int i)
+{
+	TGAtlasFace F;
+	F.HeadingOffset = i < 4 ? 90.0 * (float)i : 270.0;
+	F.Pitch = i == 4 ? 90.0 : (i == 5 ? -90.0 : 0.0);
+	F.Origin = i == 0 ? float2(2.0, 1.5) : (i == 1 ? float2(1.0, 1.5) : (i == 2 ? float2(0.0, 1.5) :
+	           (i == 3 ? float2(3.0, 1.5) : (i == 4 ? float2(1.0, 0.5) : float2(1.0, 2.5)))));
+	F.MirrorX = i < 4;
+	F.MirrorY = i >= 4;
+	return F;
+}
+
+// Which face an atlas pixel position (in pixels, 0..4S) falls in, or -1.
+int TG_AtlasFaceAt(float2 p, float FaceSize)
+{
+	float fx = p.x / FaceSize;
+	float fy = p.y / FaceSize;
+	if (fy >= 1.5 && fy < 2.5)
+	{
+		return fx < 1.0 ? 2 : (fx < 2.0 ? 1 : (fx < 3.0 ? 0 : 3));
+	}
+	if (fx >= 1.0 && fx < 2.0)
+	{
+		if (fy >= 0.5 && fy < 1.5) { return 4; }
+		if (fy >= 2.5 && fy < 3.5) { return 5; }
+	}
+	return -1;
+}
+
+// Terragen view direction for an atlas UV (0..1); w = 0 outside the six faces.
+float4 TG_AtlasDirection(float2 UV, float AtlasHeading, float FaceSize)
+{
+	float2 p = UV * (4.0 * FaceSize);
+	int face = TG_AtlasFaceAt(p, FaceSize);
+	if (face < 0)
+	{
+		return float4(0.0, 0.0, 0.0, 0.0);
+	}
+	TGAtlasFace F = TG_GetAtlasFace(face);
+	float lx = p.x - F.Origin.x * FaceSize;
+	float ly = p.y - F.Origin.y * FaceSize;
+	if (F.MirrorX) { lx = FaceSize - lx; }
+	if (F.MirrorY) { ly = FaceSize - ly; }
+	float3 d = TG_CameraRay(AtlasHeading + F.HeadingOffset, F.Pitch, 1.0, float2(lx, ly), float2(FaceSize, FaceSize));
+	return float4(d.x, d.y, d.z, 1.0);
+}
+
+// Atlas UV for a Terragen view direction; the inverse of TG_AtlasDirection. Face-local coordinates are kept
+// half a pixel inside each face so bilinear filtering never reads the empty atlas area.
+float2 TG_AtlasUV(float3 Dir, float AtlasHeading, float FaceSize)
+{
+	int best = 0;
+	float bestDot = -2.0;
+	float3 bestF = float3(0.0, 1.0, 0.0);
+	float3 bestR = float3(1.0, 0.0, 0.0);
+	float3 bestU = float3(0.0, 0.0, 1.0);
+	float3 d = normalize(Dir);
+	TG_LOOP for (int i = 0; i < 6; i++)
+	{
+		TGAtlasFace F = TG_GetAtlasFace(i);
+		float h = (AtlasHeading + F.HeadingOffset) * TG_DEG;
+		float pt = F.Pitch * TG_DEG;
+		float3 fw = float3(sin(h) * cos(pt), cos(h) * cos(pt), sin(pt));
+		float k = dot(d, fw);
+		if (k > bestDot)
+		{
+			bestDot = k;
+			best = i;
+			bestF = fw;
+			bestR = float3(cos(h), -sin(h), 0.0);
+			bestU = cross(bestR, fw);
+		}
+	}
+	TGAtlasFace B = TG_GetAtlasFace(best);
+	float sx = dot(d, bestR) / bestDot;
+	float sy = dot(d, bestU) / bestDot;
+	float halfSize = FaceSize * 0.5;
+	float lx = clamp(sx * halfSize + halfSize, 0.5, FaceSize - 0.5);
+	float ly = clamp(halfSize - sy * halfSize, 0.5, FaceSize - 0.5);
+	if (B.MirrorX) { lx = FaceSize - lx; }
+	if (B.MirrorY) { ly = FaceSize - ly; }
+	return float2((B.Origin.x * FaceSize + lx) / (4.0 * FaceSize), (B.Origin.y * FaceSize + ly) / (4.0 * FaceSize));
+}
+
+// Bilinear lookup of an atlas by direction with Load, so no sampler is needed (the atlas is 4 * FaceSize wide).
+float3 TG_AtlasLookup(Texture2D Atlas, float3 Dir, float AtlasHeading, float FaceSize)
+{
+	float2 uv = TG_AtlasUV(Dir, AtlasHeading, FaceSize);
+	float size = 4.0 * FaceSize;
+	float fx = uv.x * size - 0.5;
+	float fy = uv.y * size - 0.5;
+	float x0 = floor(fx);
+	float y0 = floor(fy);
+	float ax = fx - x0;
+	float ay = fy - y0;
+	int ix = (int)x0;
+	int iy = (int)y0;
+	float4 a = Atlas.Load(int3(ix, iy, 0));
+	float4 b = Atlas.Load(int3(ix + 1, iy, 0));
+	float4 c = Atlas.Load(int3(ix, iy + 1, 0));
+	float4 d = Atlas.Load(int3(ix + 1, iy + 1, 0));
+	float3 top = lerp(float3(a.x, a.y, a.z), float3(b.x, b.y, b.z), ax);
+	float3 bottom = lerp(float3(c.x, c.y, c.z), float3(d.x, d.y, d.z), ax);
+	return lerp(top, bottom, ay);
+}
+
 // ---------------------------------------------------------------- entry points
 
 TGShadeResult TG_EmptyResult(TGWorld W)
@@ -1487,17 +1701,66 @@ TGShadeResult TG_ShadeTerrain(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex
 	return R;
 }
 
-// Water: the flat plane lit like Terragen, plus a mirror reflection of terrain and sky. Terragen's water
-// (0x10035dc0, 0x10035020) also has waves, surf, depth transparency, a sun highlight and its own
-// reflectivity curve; here the reflectivity rises from 0 at WaterReflMinAngle to 1 at WaterReflMaxAngle
-// (incidence from the vertical) with exponent 1 / WaterReflCurve, an approximation.
-TGShadeResult TG_ShadeWater(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, TGSunInfo S,
-                            float3 O, float3 P, float footprint, float PixelAngle)
+// Water surface height with Terragen's waves (0x10034ce0): turbulence on noise3 over WaterWaveSize, with
+// octaves up to 2 * WaterWaveSize / q for heights sampled q apart.
+float TG_WaterHeight(TGWorld W, float x, float y, float q)
 {
+	float S = W.WaterWaveSize;
+	if (S <= 0.0)
+	{
+		return W.WaterLevel;
+	}
+	float limit = max(2.0 / q * S, 1.0);
+	return W.WaterLevel - TG_Turbulence3(x / S, y / S, W.WaterWaveTime, limit) * W.WaterWaveAmp;
+}
+
+// One water sample (0x10035020; 0x10035dc0 averages WAQU jittered ones per micro-polygon, here there is one
+// per pixel). The wave normal comes from heights a footprint apart. The view ray reflects off it (z kept
+// upwards) into the terrain or the sky without the sun disc, plus a sun lobe RSLB * e^(1 - (angle/RSLS)^2) /
+// RSLS^2 (0x10034f90); the reflectivity runs from WaterReflMin to WaterReflMax as (1 - |cos|)^(1 / RCRV). The
+// rest is the refracted view of the bed (0x10036280), fading to the lit water colour with depth. Not ported:
+// surf (SFDN and the rest) and the wave-strength pattern (WVAR). WaterShading = 0 keeps the flat lit plane of
+// the pre-sky renderer.
+// TG_WaterSurface does all but the traces and the terrain and sky shading, which TG_ShadeRay does so that each
+// is compiled once.
+struct TGWater
+{
+	TGShadeResult R;    // the flat lit plane; the whole answer when WaterShading is 0
+	float3 Lobe;        // the reflected sun, already weighted
+	float3 Body;        // the lit water colour
+	float F;            // reflection curve: the bed and body get 1 - F
+	float ReflW;        // reflectivity; 0 = nothing reflected
+	float3 ReflFrom;
+	float3 ReflDir;
+	float3 RefrFrom;
+	float3 RefrDir;
+	float Footprint;
+};
+
+TGWater TG_EmptyWater(TGWorld W, float3 P)
+{
+	TGWater Wt;
+	Wt.R = TG_EmptyResult(W);
+	Wt.Lobe = float3(0.0, 0.0, 0.0);
+	Wt.Body = float3(0.0, 0.0, 0.0);
+	Wt.F = 0.0;
+	Wt.ReflW = 0.0;
+	Wt.ReflFrom = P;
+	Wt.ReflDir = float3(0.0, 0.0, 1.0);
+	Wt.RefrFrom = P;
+	Wt.RefrDir = float3(0.0, 0.0, -1.0);
+	Wt.Footprint = 1e-4;
+	return Wt;
+}
+
+TGWater TG_WaterSurface(TGWorld W, Texture2D HeightTex, Texture2D CloudTex, TGSunInfo S, float3 O, float3 P, float footprint)
+{
+	TGWater Wt;
 	TGShadeResult R = TG_EmptyResult(W);
 	float3 N = float3(0.0, 0.0, 1.0);
 	float hc = TG_CloudHeight(W, P);
-	float sunFactor = TG_CloudSunFactor(W, CloudTex, S, P, hc, P, hc) * max(dot(N, S.Dir), 0.0);
+	float cloudSun = TG_CloudSunFactor(W, CloudTex, S, P, hc, P, hc);
+	float sunFactor = cloudSun * max(dot(N, S.Dir), 0.0);
 	float3 sunT = TG_SunTransmittance(W, TG_AtmosHeight(W, P));
 	R.Alpha = 1.0;
 	R.Kind = 2;
@@ -1505,67 +1768,280 @@ TGShadeResult TG_ShadeWater(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, 
 	R.SunTerm = sunFactor;
 	R.NdotL = S.Dir.z;
 	R.Linear = W.WaterColour * TG_Light(W, S, N, W.SunColour * sunT * sunFactor);
-	if (W.WaterReflectivity <= 0.0)
+	Wt.Lobe = float3(0.0, 0.0, 0.0);
+	Wt.Body = R.Linear;
+	Wt.F = 0.0;
+	Wt.ReflW = 0.0;
+	Wt.ReflFrom = P;
+	Wt.ReflDir = float3(0.0, 0.0, 1.0);
+	Wt.RefrFrom = P;
+	Wt.RefrDir = float3(0.0, 0.0, -1.0);
+	Wt.Footprint = max(footprint, 1e-4);
+	if (W.WaterShading != 0.0)
 	{
-		return R;
+		// The terrain's shadow on the water (0x10035dc0), smoothstepped like the land's.
+		float lit = 1.0;
+		if (W.LandShadows != 0.0)
+		{
+			float sh = 1.0 - TG_SunShadow(HeightTex, W.Terrain, S, P.x, P.y, W.WaterLevel);
+			lit = sh * sh * (3.0 - 2.0 * sh);
+		}
+		float3 sun = W.SunColour * sunT * (cloudSun * lit);
+		float q = Wt.Footprint;
+		float h0 = 0.0;
+		float h1 = 0.0;
+		float h2 = 0.0;
+		TG_LOOP for (int k = 0; k < 3; k++)
+		{
+			float h = TG_WaterHeight(W, P.x + (k == 1 ? q : 0.0), P.y + (k == 2 ? q : 0.0), q);
+			if (k == 0) { h0 = h; } else if (k == 1) { h1 = h; } else { h2 = h; }
+		}
+		N = normalize(float3(-(h1 - h0) * q, -(h2 - h0) * q, q * q));
+#if TG_PROFILE_NO_WAVES
+		N = float3(0.0, 0.0, 1.0);
+#endif
+		float3 V = normalize(O - float3(P.x, P.y, h0));
+		float e = exp(-W.WaterViscosity);
+		float c = e * dot(N, V) + (1.0 - e);
+		Wt.F = pow(saturate(1.0 - abs(c)), 1.0 / max(W.WaterReflCurve, 0.01));
+		Wt.ReflW = lerp(W.WaterReflMin, W.WaterReflMax, Wt.F);
+		Wt.Body = W.WaterColour * TG_Light(W, S, N, sun * max(dot(N, S.Dir), 0.0));
+		float3 Rd = N * (2.0 * c) - V;
+		Rd = normalize(float3(Rd.x, Rd.y, abs(Rd.z)));
+		float a = acos(clamp(dot(Rd, S.Dir), -1.0, 1.0)) / W.WaterSunWidth;
+		Wt.Lobe = sun * (Wt.ReflW * W.WaterSunLobe * exp(1.0 - a * a) / (W.WaterSunWidth * W.WaterSunWidth));
+		Wt.ReflFrom = float3(P.x, P.y, max(h0, W.WaterLevel) + 0.001);
+		Wt.ReflDir = Rd;
+		float eta = (1.0 - c * c) * 0.7692308;
+		float s = sqrt(max(1.0 - eta * eta, 0.0));
+		Wt.RefrFrom = float3(P.x, P.y, min(h0, W.WaterLevel) - 0.001);
+		Wt.RefrDir = normalize(-(N * (c * s)) - (V - N * c) * eta);
+		R.NdotL = dot(N, S.Dir);
+		R.NormalZ = N.z;
 	}
-	float3 V = normalize(P - O);
-	float incidence = acos(clamp(-V.z, -1.0, 1.0));
-	float t = saturate((incidence - W.WaterReflMinAngle) / max(W.WaterReflMaxAngle - W.WaterReflMinAngle, 0.001));
-	float refl = W.WaterReflectivity * pow(t, 1.0 / max(W.WaterReflCurve, 0.01));
-	float3 Rd = float3(V.x, V.y, -V.z);
-	float3 from = float3(P.x, P.y, P.z + 0.0001);
-	float3 c = W.BackgroundColour;
-	TGHit hit = TG_Trace(W, HeightTex, from, Rd, 0.0);
-	if (hit.Kind == 1)
-	{
-		float fp2 = max((length(P - O) + hit.T) * PixelAngle / max(W.Detail, 0.01), 1e-4);
-		c = TG_ShadeTerrain(W, HeightTex, NoiseTex, CloudTex, S, hit.P, fp2).Linear;
-		c = TG_Atmosphere(W, CloudTex, S, from, hit.P, TG_Glow(W, dot(Rd, S.Dir), 1.0, W.Atmos.GlowFlag), c);
-	}
-	else if (W.Sky.On != 0.0)
-	{
-		float4 sky = TG_SkyRay(W, CloudTex, S, from, Rd, PixelAngle);
-		c = float3(sky.x, sky.y, sky.z);
-	}
-	R.Linear = lerp(R.Linear, c, refl);
-	return R;
+	Wt.R = R;
+	return Wt;
 }
 
 // Shade one ray. O is in Terragen coordinates, D need not be normalised. PixelAngle is the angle one
 // pixel subtends (1 / focal length in pixels); it sets the detail footprint like Terragen's micro-polygon
 // size. StartDistance skips terrain closer than that many grid units. CloudTex is the world's cloud map
-// (only read when the sky is on). Rays that hit nothing show the sky, with Alpha 0.
-TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+// (only read when the sky or cloud shadows are on). Rays that hit nothing show the sky, with Alpha 0.
+// The expensive parts are each compiled once, which keeps FXC's compile time sane: a ray needs up to three
+// traces (the view ray, then for water its reflection and refraction), two terrain shadings (the hit, or the
+// reflection's hit and the lake bed) and one sky (a miss, or the reflection's miss).
+// SkipSky leaves out the sky of a ray that hits nothing (it returns the background with alpha 0), so the sky
+// can be rendered separately at its own resolution and rate (TG_RenderSkyRay); reflections still see the sky.
+// With ReflFaceSize > 0, a water reflection that misses the terrain reads the sky from ReflSky, an atlas of
+// linear reflection-sky colour (TG_RenderReflectionSkyRay from ReflCameraPos, heading ReflAtlasHeading)
+// instead of computing it: the costly part of the water. The atlas holds the sky seen from one point at water
+// level, so the lookup aims at the dome point the reflection really meets, which keeps the clouds in place;
+// what is left over is the atmosphere along a slightly different path.
+TGShadeResult TG_ShadeRayEx(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 O, float3 D, float PixelAngle, float StartDistance, bool SkipSky,
+                            Texture2D ReflSky, float3 ReflCameraPos, float ReflAtlasHeading, float ReflFaceSize)
 {
 	D = normalize(D);
 	TGShadeResult R = TG_EmptyResult(W);
 	TGSunInfo S = TG_MakeSun(W);
-	TGHit hit = TG_Trace(W, HeightTex, O, D, StartDistance);
+	float3 zero = float3(0.0, 0.0, 0.0);
+	float3 colour = zero;
+	TGHit hit;
+	hit.Kind = 0;
+	hit.T = -1.0;
+	hit.P = O;
+	TGWater wt = TG_EmptyWater(W, O);
+	// Terrain to shade: slot 0 is the hit or the reflection's hit (seen through the atmosphere from the water),
+	// slot 1 the lake bed.
+	float3 p0 = O;
+	float fp0 = 1e-4;
+	float3 w0 = zero;
+	float atmos0 = 0.0;
+	float3 p1 = O;
+	float fp1 = 1e-4;
+	float3 w1 = zero;
+	float3 skyO = O;
+	float3 skyD = D;
+	float skyFp = 0.0;
+	float skySun = 1.0;
+	float3 skyW = zero;
+	float3 rayO = O;
+	float3 rayD = D;
+	float rayStart = StartDistance;
+	int traces = 1;
+	TG_LOOP for (int trace = 0; trace < traces; trace++)
+	{
+		TGHit h = TG_Trace(W, HeightTex, rayO, rayD, rayStart);
+		if (trace == 0)
+		{
+			hit = h;
+			if (h.Kind == 0)
+			{
+				if (W.Sky.On != 0.0 && !SkipSky)
+				{
+					skyW = float3(1.0, 1.0, 1.0);
+				}
+			}
+			else
+			{
+				float footprint = max(h.T * PixelAngle / max(W.Detail, 0.01), 1e-4);
+				if (h.Kind == 1)
+				{
+					p0 = h.P;
+					fp0 = footprint;
+					w0 = float3(1.0, 1.0, 1.0);
+				}
+				else
+				{
+					wt = TG_WaterSurface(W, HeightTex, CloudTex, S, O, h.P, footprint);
+					colour = W.WaterShading != 0.0 ? wt.Lobe + wt.Body * (1.0 - wt.F) : wt.R.Linear;
+					if (W.WaterShading != 0.0)
+					{
+						traces = TG_PROFILE_WATER_TRACES;
+						rayO = wt.ReflFrom;
+						rayD = wt.ReflDir;
+						rayStart = 0.0;
+					}
+				}
+			}
+		}
+		else if (trace == 1)
+		{
+			if (wt.ReflW > 0.0)
+			{
+				if (h.Kind == 1)
+				{
+					p0 = h.P;
+					fp0 = max((hit.T + h.T) * PixelAngle / max(W.Detail, 0.01), 1e-4);
+					w0 = float3(wt.ReflW, wt.ReflW, wt.ReflW);
+					atmos0 = 1.0;
+				}
+				else if (W.Sky.On != 0.0)
+				{
+					skyO = wt.ReflFrom;
+					skyD = wt.ReflDir;
+					skyFp = 0.1;
+					skySun = 0.0;
+					skyW = TG_PROFILE_NO_REFL_SKY ? float3(0.0, 0.0, 0.0) : float3(wt.ReflW, wt.ReflW, wt.ReflW);
+				}
+			}
+			rayO = wt.RefrFrom;
+			rayD = wt.RefrDir;
+		}
+		else if (h.Kind == 1 && h.T < W.WaterMaxDepth && wt.F < 1.0)
+		{
+			float3 a = float3(1.0 - exp(-W.WaterAbsorb.x * h.T), 1.0 - exp(-W.WaterAbsorb.y * h.T),
+			                  1.0 - exp(-W.WaterAbsorb.z * h.T));
+			colour = wt.Lobe + wt.Body * a * (1.0 - wt.F);
+			p1 = h.P;
+			fp1 = wt.Footprint;
+			w1 = (float3(1.0, 1.0, 1.0) - a) * (1.0 - wt.F);
+		}
+	}
+	if (hit.Kind == 2)
+	{
+		R = wt.R;
+	}
+	TG_LOOP for (int k = 0; k < 2; k++)
+	{
+		float3 wk = k == 0 ? w0 : w1;
+		if (wk.x + wk.y + wk.z > 0.0)
+		{
+			TGShadeResult t = TG_ShadeTerrain(W, HeightTex, NoiseTex, CloudTex, S, k == 0 ? p0 : p1, k == 0 ? fp0 : fp1);
+			float3 c = t.Linear;
+			if (k == 0 && atmos0 != 0.0)
+			{
+				c = TG_Atmosphere(W, CloudTex, S, wt.ReflFrom, p0, TG_Glow(W, dot(wt.ReflDir, S.Dir), 1.0, W.Atmos.GlowFlag), c);
+			}
+			if (hit.Kind == 1)
+			{
+				R = t;
+			}
+			colour = colour + c * wk;
+		}
+	}
+	if (skyW.x + skyW.y + skyW.z > 0.0)
+	{
+		// skySun is 0 only for a reflection's sky.
+		if (skySun == 0.0 && ReflFaceSize > 0.0)
+		{
+			float4 q = TG_DomeHit(W, skyO, normalize(skyD));
+			float3 look = q.w > 0.0 ? float3(q.x, q.y, q.z) - float3(ReflCameraPos.x, ReflCameraPos.y, W.WaterLevel + 0.001) : skyD;
+			colour = colour + TG_AtlasLookup(ReflSky, look, ReflAtlasHeading, ReflFaceSize) * skyW;
+		}
+		else
+		{
+			float4 sky = TG_SkyDome(W, CloudTex, S, skyO, skyD, PixelAngle, skyFp, skySun);
+			colour = colour + float3(sky.x, sky.y, sky.z) * skyW;
+		}
+	}
 	if (hit.Kind == 0)
 	{
-		if (W.Sky.On != 0.0)
+		if (W.Sky.On != 0.0 && !SkipSky)
 		{
-			float4 sky = TG_SkyRay(W, CloudTex, S, O, D, PixelAngle);
-			R.Linear = float3(sky.x, sky.y, sky.z);
+			R.Linear = colour;
 		}
 	}
 	else
 	{
-		float footprint = max(hit.T * PixelAngle / max(W.Detail, 0.01), 1e-4);
-		if (hit.Kind == 2)
-		{
-			R = TG_ShadeWater(W, HeightTex, NoiseTex, CloudTex, S, O, hit.P, footprint, PixelAngle);
-		}
-		else
-		{
-			R = TG_ShadeTerrain(W, HeightTex, NoiseTex, CloudTex, S, hit.P, footprint);
-		}
 		R.Distance = hit.T;
 		// Atmosphere between the camera and the point, with the glow towards the sun (0x1002d620).
-		R.Linear = TG_Atmosphere(W, CloudTex, S, O, hit.P, TG_Glow(W, dot(D, S.Dir), 1.0, W.Atmos.GlowFlag), R.Linear);
+		R.Linear = TG_Atmosphere(W, CloudTex, S, O, hit.P, TG_Glow(W, dot(D, S.Dir), 1.0, W.Atmos.GlowFlag), colour);
 	}
 	return R;
+}
+
+TGShadeResult TG_ShadeRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 O, float3 D, float PixelAngle, float StartDistance)
+{
+	return TG_ShadeRayEx(W, HeightTex, NoiseTex, CloudTex, O, D, PixelAngle, StartDistance, false, NoiseTex, O, 0.0, 0.0);
+}
+
+// The sky a water reflection sees in direction D, as TG_ShadeRayEx computes it exactly: from water level below
+// O, without the sun disc (the sun's reflection is the water's own lobe), with Terragen's fixed cloud footprint
+// for reflections. Linear colour, for an HDR atlas that TG_ShadeRayEx then reads. (Steep waves can reflect
+// downwards, so every direction is rendered.)
+float4 TG_RenderReflectionSkyRay(TGWorld W, Texture2D CloudTex, float3 O, float3 D)
+{
+	if (W.Sky.On == 0.0 || W.WaterPresent == 0.0)
+	{
+		return float4(0.0, 0.0, 0.0, 1.0);
+	}
+	float4 sky = TG_SkyDome(W, CloudTex, TG_MakeSun(W), float3(O.x, O.y, W.WaterLevel + 0.001), normalize(D), 0.0, 0.1, 0.0);
+	return float4(sky.x, sky.y, sky.z, 1.0);
+}
+
+// True when the sky in direction D is never seen from near O: the ray is more than 5 degrees below the horizon
+// and reaches the lowest surface (the water plane, or the terrain's lowest point) well inside the grid, so it has
+// hit the terrain or the water first. The margin (24 cells) keeps that true for a camera up to a few dozen
+// metres away, so a sky atlas drawn from O can still be used after the camera moves. StartDistance must not
+// skip past that point.
+bool TG_SkyHidden(TGWorld W, float3 O, float3 D, float StartDistance)
+{
+	D = normalize(D);
+	float floorZ = W.WaterPresent != 0.0 ? max(W.WaterLevel, W.Terrain.MinHeight) : W.Terrain.MinHeight;
+	if (D.z > -0.0872 || O.z <= floorZ)
+	{
+		return false;
+	}
+	float t = (floorZ - O.z) / D.z;
+	float x = O.x + D.x * t;
+	float y = O.y + D.y * t;
+	float m = 24.0;
+	float n = (float)W.Terrain.Cells;
+	return t >= StartDistance && x > m && y > m && x < n - m && y < n - m;
+}
+
+// Only the sky of a ray: what TG_ShadeRay returns for a ray that hits no terrain, tone mapped. With the sky
+// off that is the background colour.
+float4 TG_RenderSkyRay(TGWorld W, Texture2D CloudTex, float3 O, float3 D, float PixelAngle)
+{
+	float3 c = W.BackgroundColour;
+	if (W.Sky.On != 0.0)
+	{
+		float4 sky = TG_SkyDome(W, CloudTex, TG_MakeSun(W), O, normalize(D), PixelAngle, 0.0, 1.0);
+		c = float3(sky.x, sky.y, sky.z);
+	}
+	c = TG_ToneMap(W, c);
+	return float4(c.x, c.y, c.z, 1.0);
 }
 
 // Display colour (Terragen's exposure and tone curve applied) and coverage alpha.
@@ -1574,21 +2050,6 @@ float4 TG_RenderRay(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2
 	TGShadeResult R = TG_ShadeRay(W, HeightTex, NoiseTex, CloudTex, O, D, PixelAngle, StartDistance);
 	float3 c = TG_ToneMap(W, R.Linear);
 	return float4(c.x, c.y, c.z, R.Alpha);
-}
-
-// Terragen's camera (0x1002c910, ReceiveRender): focal length = zoom * width / 2, heading measured from
-// +y towards +x, pitch up positive. Pixel is the pixel centre, row 0 at the top.
-float3 TG_CameraRay(float HeadingDeg, float PitchDeg, float Zoom, float2 Pixel, float2 ImageSize)
-{
-	float h = HeadingDeg * TG_DEG;
-	float p = PitchDeg * TG_DEG;
-	float3 F = float3(sin(h) * cos(p), cos(h) * cos(p), sin(p));
-	float3 Rt = float3(cos(h), -sin(h), 0.0);
-	float3 U = cross(Rt, F);
-	float focal = Zoom * ImageSize.x * 0.5;
-	float sx = (Pixel.x - ImageSize.x * 0.5) / focal;
-	float sy = (ImageSize.y * 0.5 - Pixel.y) / focal;
-	return F + Rt * sx + U * sy;
 }
 
 #endif // TERRAGEN_USH

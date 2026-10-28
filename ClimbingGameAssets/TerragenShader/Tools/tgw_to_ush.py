@@ -8,8 +8,8 @@ With the sky on (RSKY) it also fills the atmosphere and the sky dome / cloud lay
 from make_cloud_map.py.
 
 Usage: python tgw_to_ush.py <world.tgw> <terrain.json> -o <out.ush> --name <Name>
-         [--sun-scale K] [--ambient-scale K] [--exposure E] [--sun HEADING ALTITUDE] [--cloud-fade-depth]
-         [--sun-path-scale K] [--cloud-samples N]
+         [--sun-scale K] [--ambient-scale K] [--exposure E] [--sun HEADING ALTITUDE] [--cloud-shadows 0|1]
+         [--pre-sky] [--frame F] [--sun-path-scale K] [--cloud-samples N]
 """
 import argparse
 import json
@@ -179,10 +179,13 @@ def main():
                     help='samples per cloud march (Terragen iterates 16 * 4 * 2^CLAC times)')
     ap.add_argument('--sun', type=float, nargs=2, metavar=('HEADING', 'ALTITUDE'),
                     help="override the world's sun direction, for renders made after the sun was moved")
-    # 0x1001a100 fades the cloud dimming in over the atmosphere step. The MountainTop include predates the
-    # sky work and was validated with the cloud depth instead; this keeps it rendering as before.
-    ap.add_argument('--cloud-fade-depth', action='store_true',
-                    help='fade the cloud dimming over the cloud depth instead of the atmosphere step')
+    ap.add_argument('--cloud-shadows', type=int, choices=(0, 1),
+                    help="override the world's 'clouds cast shadows' (LITA CCST)")
+    # The MountainTop include predates the sky work and was validated against Terragen with the cloud dimming
+    # fading in over the cloud depth (0x1001a100 uses the atmosphere step) and the water as a flat lit plane.
+    ap.add_argument('--pre-sky', action='store_true',
+                    help='render as before the sky work: cloud dimming over the cloud depth, flat water')
+    ap.add_argument('--frame', type=float, default=1.0, help='animation frame, for the wave noise (time = frame / 24)')
     args = ap.parse_args()
 
     world = read_tgw(args.tgw)
@@ -217,7 +220,8 @@ def main():
     exposure = args.exposure if args.exposure is not None else wldg.f32('EXPO', 1.0)
     sun_heading, sun_altitude = args.sun if args.sun else (sun.f32('HEAD'), sun.f32('ALT '))
     cloud_depth = cldl.f32('DEPT') if cldl else 0.0
-    cloud_fade = cloud_depth if args.cloud_fade_depth else atmosphere_step(world, ter)
+    cloud_fade = cloud_depth if args.pre_sky else atmosphere_step(world, ter)
+    cloud_shadows = args.cloud_shadows if args.cloud_shadows is not None else int(lita.f32('CCST') != 0.0)
     name = args.name
     atmos = atmosphere_fields(world, ter, args.sun_path_scale, sun_altitude)
     sky = sky_fields(world, ter, args.cloud_samples)
@@ -230,6 +234,10 @@ def main():
     if args.sun:
         w(f'// Sun moved to heading {sun_heading:g}, altitude {sun_altitude:g} (the world file has '
           f'{sun.f32("HEAD"):g}, {sun.f32("ALT "):g}).')
+    if args.cloud_shadows is not None:
+        w(f'// Clouds cast shadows set to {args.cloud_shadows} (the world file has {int(lita.f32("CCST") != 0.0)}).')
+    if args.pre_sky:
+        w('// Pre-sky renderer: cloud dimming over the cloud depth, flat water (see tgw_to_ush.py --pre-sky).')
     if args.sun_scale != [1.0, 1.0, 1.0] or args.ambient_scale != [1.0, 1.0, 1.0]:
         w('// The light scales were fitted against a Terragen render (compare.py --calibrate).')
     guard = f'TERRAGEN_WORLD_{name.upper()}_USH'
@@ -266,7 +274,7 @@ def main():
     w(f'\tW.CloudDepth = {f(cloud_depth)};')
     w(f'\tW.CloudSunlight = {f(1.0 - lita.f32("CLDS"))};')
     w(f'\tW.CloudFade = {f(cloud_fade)};')
-    w(f'\tW.CloudShadows = {f(1.0 if cldl and lita.f32("CCST") != 0.0 else 0.0)};')
+    w(f'\tW.CloudShadows = {f(1.0 if cldl and cloud_shadows else 0.0)};')
     w('\tW.WaterPresent = 1.0;')
     w(f'\tW.WaterLevel = {f(watr.f32("LEVL"))};')
     w(f'\tW.WaterColour = {f3(watr.colour("DIFC"))};')
@@ -275,11 +283,22 @@ def main():
     w(f'\tW.Exposure = {f(exposure)};')
     w('\tW.BumpTerrainValue = 0.25;')
     w('\tW.BackgroundColour = float3(0.0, 0.0, 0.0);')
-    maxr, minr = watr.f32('MAXR'), watr.f32('MINR')
-    w(f'\tW.WaterReflectivity = {f(1.0 if maxr > minr else 0.0)};')
-    w(f'\tW.WaterReflMinAngle = {f(minr)};')
-    w(f'\tW.WaterReflMaxAngle = {f(maxr)};')
+    # Water (WATR, copied to 0x100acb58 by ReceiveLandscape; shaded by 0x10035020). TRNC * TRNS is the
+    # distance in metres over which each channel decays by e; the refraction trace stops at 6 of the shortest.
+    wlen = watr.f32('WLEN')
+    absorb = [ter['scale_m'] * 256.0 / max(c * 256.0 * watr.f32('TRNS'), 1e-4) for c in watr.colour('TRNC')]
+    w(f'\tW.WaterShading = {f(0.0 if args.pre_sky else 1.0)};')
+    w(f'\tW.WaterWaveSize = {f(wlen)};')
+    w(f'\tW.WaterWaveAmp = {f(watr.f32("WAMP") * wlen)};')
+    w(f'\tW.WaterWaveTime = {f((args.frame + 1e-4) / 24.0 / max(wlen, 1e-6) / ter["scale_m"])};')
+    w(f'\tW.WaterViscosity = {f(watr.f32("VISC") * watr.f32("WAMP"))};')
+    w(f'\tW.WaterReflMin = {f(watr.f32("MINR"))};')
+    w(f'\tW.WaterReflMax = {f(watr.f32("MAXR"))};')
     w(f'\tW.WaterReflCurve = {f(watr.f32("RCRV", 1.0))};')
+    w(f'\tW.WaterSunLobe = {f(watr.f32("RSLB"))};')
+    w(f'\tW.WaterSunWidth = {f(max(watr.f32("RSLS"), 0.01))};')
+    w(f'\tW.WaterAbsorb = {f3(absorb)};')
+    w(f'\tW.WaterMaxDepth = {f(6.0 / max(min(absorb), 1e-6))};')
     for key, value in atmos.items():
         w(f'\tW.Atmos.{key} = {f3(value) if isinstance(value, (list, tuple)) else f(value)};')
     for key, value in sky.items():

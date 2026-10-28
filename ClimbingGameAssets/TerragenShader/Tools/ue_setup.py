@@ -12,13 +12,24 @@ closing a restored Skeletal Mesh editor on exit.)
 Creates in /Game/MyStuff/Skybox/Terragen:
   Textures/T_TerragenHeight_MountainTop, Textures/T_TerragenNoise  (16-bit greyscale, read exactly with Load)
   RT_TerragenSky          2048x2048 RGBA8 linear: the six faces in the old skybox cross layout
-  M_TerragenRender        draws one atlas texel with TG_RenderAtlasTexel (Custom node)
+  M_TerragenRender        the terrain pass: one terrain atlas texel (TG_RenderAtlasTexelComposite, Custom node)
+  M_TerragenRenderSky     the sky pass (Mode 0) and the reflection-sky pass (Mode 1), TG_RenderAtlasTexelSky
+  RT_TerragenSkyOnly, RT_TerragenReflSky   defaults for the terrain pass's sky and reflection atlas inputs
   M_TerragenSkyDisplay    sky-sphere material: looks the view direction up in RT_TerragenSky
   TerragenSkyTest         a small test map with a floor, a player start and an ATerragenSkybox
 
 Then it renders the atlas for MountainTop frames 1 and 400, times a full redraw, and exports
 Out/ue/Atlas_GPU_0001.png and Atlas_GPU_0400.png for comparison with the CPU harness. Set the environment
 variable TG_SETUP_NO_QUIT=1 to keep the editor open afterwards.
+
+Sky worlds: set TG_WORLD=Prototype2World to build that world instead, next to the MountainTop assets and
+without touching them. It creates, with the world's name as a suffix:
+  Textures/T_TerragenClouds_<World>   the cloud map (Tools/make_cloud_map.py), 8-bit greyscale read with Load
+  M_TerragenRender_<World>            TG_RenderAtlasTexel with the CloudTex input
+  M_TerragenSkyDisplay_<World>, RT_TerragenSky_<World>
+  TerragenSkyTest_<World>             test map whose ATerragenSkybox points at the assets above
+and exports Out/ue/<World>/Atlas_GPU_0001.png and timing.txt. The height and noise textures are shared
+(Prototype2World uses the same terrain) and only imported if missing.
 """
 import os
 
@@ -27,8 +38,25 @@ import unreal
 DEST = '/Game/MyStuff/Skybox/Terragen'
 PROJECT = unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir())
 ROOT = os.path.join(PROJECT, 'ClimbingGameAssets', 'TerragenShader')
-OUT = os.path.join(ROOT, 'Out', 'ue')
-ATLAS_SIZE = 2048
+ATLAS_SIZE = 2048       # ATerragenSkybox's TerrainAtlasSize default
+SKY_ATLAS_SIZE = 1024   # its SkyAtlasSize
+REFL_ATLAS_SIZE = 512   # and its ReflectionAtlasSize
+
+# Per world: the Terragen camera of frame 1 (the actor's TerragenStart), the sun for the test map's light
+# and the frames gpu_check renders (GenSkyboxAnimation.tgs raises the camera 0.067 units per frame).
+WORLDS = {
+    'MountainTop': {'clouds': None, 'start': (164.0, 223.0, 45.647), 'sun': (260.0, 43.0), 'frames': (1, 400)},
+    # The reference render's sun (24, 48) and camera, fitted (see README); the world file's sun is 119, 43.
+    'Prototype2World': {'clouds': 'Prototype2World_clouds.png', 'start': (198.0, 270.0, 16.43), 'sun': (24.0, 48.0),
+                        'frames': (1,)},
+}
+WORLD = os.environ.get('TG_WORLD', 'MountainTop')
+if WORLD not in WORLDS:
+    raise SystemExit(f'TG_WORLD={WORLD}: unknown world; one of {", ".join(WORLDS)}')
+SETTINGS = WORLDS[WORLD]
+SUFFIX = '' if WORLD == 'MountainTop' else f'_{WORLD}'
+OUT = os.path.join(ROOT, 'Out', 'ue') if not SUFFIX else os.path.join(ROOT, 'Out', 'ue', WORLD)
+HEADING = 18.0   # HeadingAtPlusX and AtlasHeading of both worlds
 
 tools = unreal.AssetToolsHelpers.get_asset_tools()
 MEL = unreal.MaterialEditingLibrary
@@ -47,6 +75,7 @@ def get_or_create(name, path, cls, factory):
 
 
 def import_texture(src, name):
+    # Exact values: no sRGB, uncompressed greyscale (G16 for 16-bit sources, G8 for 8-bit), no mips, no streaming.
     task = unreal.AssetImportTask()
     task.filename = src
     task.destination_path = f'{DEST}/Textures'
@@ -56,7 +85,6 @@ def import_texture(src, name):
     task.save = False
     tools.import_asset_tasks([task])
     tex = unreal.load_asset(f'{DEST}/Textures/{name}')
-    # Exact 16-bit values: no sRGB, no compression beyond G16, no mips, no streaming.
     tex.set_editor_property('srgb', False)
     tex.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_GRAYSCALE)
     tex.set_editor_property('mip_gen_settings', unreal.TextureMipGenSettings.TMGS_NO_MIPMAPS)
@@ -69,11 +97,19 @@ def import_texture(src, name):
     return tex
 
 
-def texture_object_param(mat, name, tex, x, y):
+def shared_texture(src, name):
+    """A texture the MountainTop assets also use: a sky-world run only imports it when it is missing."""
+    path = f'{DEST}/Textures/{name}'
+    if SUFFIX and EAL.does_asset_exist(path):
+        return unreal.load_asset(path)
+    return import_texture(src, name)
+
+
+def texture_object_param(mat, name, tex, x, y, sampler=unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_GRAYSCALE):
     node = MEL.create_material_expression(mat, unreal.MaterialExpressionTextureObjectParameter, x, y)
     node.set_editor_property('parameter_name', name)
     node.set_editor_property('texture', tex)
-    node.set_editor_property('sampler_type', unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_GRAYSCALE)
+    node.set_editor_property('sampler_type', sampler)
     return node
 
 
@@ -99,30 +135,18 @@ def custom_node(mat, x, y, desc, code, output_type, inputs, includes):
     return node
 
 
-def build_render_material(height, noise):
-    mat = get_or_create('M_TerragenRender', DEST, unreal.Material, unreal.MaterialFactoryNew())
-    MEL.delete_all_material_expressions(mat)
-    mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
-    uv = MEL.create_material_expression(mat, unreal.MaterialExpressionTextureCoordinate, -900, -200)
-    ht = texture_object_param(mat, 'HeightTex', height, -900, -60)
-    nt = texture_object_param(mat, 'NoiseTex', noise, -900, 120)
-    cam = MEL.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, -900, 300)
-    cam.set_editor_property('parameter_name', 'CameraPos')
-    cam.set_editor_property('default_value', unreal.LinearColor(164.0, 223.0, 45.647, 0.0))
-    heading = scalar_param(mat, 'AtlasHeading', 18.0, -900, 520)
-    face = scalar_param(mat, 'FaceSize', ATLAS_SIZE / 4, -900, 620)
-    start = scalar_param(mat, 'StartDistance', 0.0, -900, 720)
-    # Terragen units; negative = off. ATerragenSkybox sets it from TerrainClearance (cm).
-    clearance = scalar_param(mat, 'TerrainClearance', 0.1, -900, 820)
+def camera_param(mat, x, y, name='CameraPos'):
+    cam = MEL.create_material_expression(mat, unreal.MaterialExpressionVectorParameter, x, y)
+    cam.set_editor_property('parameter_name', name)
+    cam.set_editor_property('default_value', unreal.LinearColor(*SETTINGS['start'], 0.0))
+    return cam
+
+
+def finish_material(mat, desc, code, names, sources):
     custom = custom_node(
-        mat, -450, 0, 'Terragen atlas texel',
-        'return TG_RenderAtlasTexel(TGWorld_MountainTop(), HeightTex, NoiseTex, UV, CameraPos.xyz, AtlasHeading, FaceSize, StartDistance, TerrainClearance);',
-        unreal.CustomMaterialOutputType.CMOT_FLOAT4,
-        ['UV', 'HeightTex', 'NoiseTex', 'CameraPos', 'AtlasHeading', 'FaceSize', 'StartDistance', 'TerrainClearance'],
-        ['/TerragenShaders/TerragenUE.ush', '/TerragenShaders/Worlds/MountainTop.ush'])
-    for src, pin in ((uv, 'UV'), (ht, 'HeightTex'), (nt, 'NoiseTex'), (cam, 'CameraPos'),
-                     (heading, 'AtlasHeading'), (face, 'FaceSize'), (start, 'StartDistance'),
-                     (clearance, 'TerrainClearance')):
+        mat, -450, 0, desc, code, unreal.CustomMaterialOutputType.CMOT_FLOAT4, names,
+        ['/TerragenShaders/TerragenUE.ush', f'/TerragenShaders/Worlds/{WORLD}.ush'])
+    for src, pin in zip(sources, names):
         MEL.connect_material_expressions(src, '', custom, pin)
     MEL.connect_material_property(custom, '', unreal.MaterialProperty.MP_EMISSIVE_COLOR)
     MEL.recompile_material(mat)
@@ -130,15 +154,85 @@ def build_render_material(height, noise):
     return mat
 
 
+def build_render_material(height, noise, clouds, sky_rt, refl_rt):
+    """The terrain pass: terrain from TG_RenderAtlasTexelTerrain, rays that miss it filled from the sky atlas, water
+    reflections of the sky read from the reflection atlas."""
+    mat = get_or_create(f'M_TerragenRender{SUFFIX}', DEST, unreal.Material, unreal.MaterialFactoryNew())
+    MEL.delete_all_material_expressions(mat)
+    mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    names = ['UV', 'HeightTex', 'NoiseTex', 'CameraPos', 'AtlasHeading', 'FaceSize', 'StartDistance', 'TerrainClearance',
+             'SkyAtlas', 'SkyFaceSize', 'ReflSky', 'ReflFaceSize', 'ReflCameraPos']
+    sources = [
+        MEL.create_material_expression(mat, unreal.MaterialExpressionTextureCoordinate, -900, -200),
+        texture_object_param(mat, 'HeightTex', height, -900, -60),
+        texture_object_param(mat, 'NoiseTex', noise, -900, 120),
+        camera_param(mat, -900, 300),
+        scalar_param(mat, 'AtlasHeading', HEADING, -900, 520),
+        scalar_param(mat, 'FaceSize', ATLAS_SIZE / 4, -900, 620),
+        scalar_param(mat, 'StartDistance', 0.0, -900, 720),
+        # Terragen units; negative = off. ATerragenSkybox sets it from TerrainClearance (cm).
+        scalar_param(mat, 'TerrainClearance', 0.1, -900, 820),
+        # ATerragenSkybox sets both to its sky render target; the asset is only the default.
+        texture_object_param(mat, 'SkyAtlas', sky_rt, -900, 920, unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR),
+        scalar_param(mat, 'SkyFaceSize', SKY_ATLAS_SIZE / 4, -900, 1120),
+        # Read with Load, so the sampler type only has to suit the texture. ReflFaceSize 0 (the default, for the
+        # material on its own) computes reflections exactly; the actor sets the size of its reflection atlas.
+        texture_object_param(mat, 'ReflSky', refl_rt, -900, 1220, unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR),
+        scalar_param(mat, 'ReflFaceSize', 0.0, -900, 1420),
+        camera_param(mat, -900, 1520, 'ReflCameraPos'),
+    ]
+    cloud_arg = 'NoiseTex'   # never read when the world has no sky and no cloud shadows (TerragenUE.ush)
+    if clouds is not None:
+        # The actor doesn't set CloudTex; the parameter's default is the world's cloud map.
+        names.append('CloudTex')
+        sources.append(texture_object_param(mat, 'CloudTex', clouds, -900, 1720))
+        cloud_arg = 'CloudTex'
+    code = (f'return TG_RenderAtlasTexelComposite(TGWorld_{WORLD}(), HeightTex, NoiseTex, {cloud_arg}, SkyAtlas, '
+            'SkyAtlasSampler, ReflSky, UV, CameraPos.xyz, ReflCameraPos.xyz, AtlasHeading, FaceSize, SkyFaceSize, '
+            'ReflFaceSize, StartDistance, TerrainClearance);')
+    return finish_material(mat, 'Terragen terrain texel', code, names, sources)
+
+
+def build_sky_material(height, clouds):
+    """The sky pass: only the sky (clouds, atmosphere, sun), at its own resolution and quality. Mode 1 is the
+    reflection-sky pass instead (linear colour, for the actor's floating-point reflection atlas)."""
+    mat = get_or_create(f'M_TerragenRenderSky{SUFFIX}', DEST, unreal.Material, unreal.MaterialFactoryNew())
+    MEL.delete_all_material_expressions(mat)
+    mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
+    names = ['UV', 'HeightTex', 'CameraPos', 'AtlasHeading', 'FaceSize', 'TerrainClearance', 'CloudQuality',
+             'AtmosQuality', 'StartDistance', 'Mode']
+    sources = [
+        MEL.create_material_expression(mat, unreal.MaterialExpressionTextureCoordinate, -900, -200),
+        texture_object_param(mat, 'HeightTex', height, -900, -60),
+        camera_param(mat, -900, 300),
+        scalar_param(mat, 'AtlasHeading', HEADING, -900, 520),
+        scalar_param(mat, 'FaceSize', SKY_ATLAS_SIZE / 4, -900, 620),
+        scalar_param(mat, 'TerrainClearance', 0.1, -900, 820),
+        scalar_param(mat, 'CloudQuality', 1.0, -900, 920),
+        scalar_param(mat, 'AtmosQuality', 1.0, -900, 1020),
+        scalar_param(mat, 'StartDistance', 0.0, -900, 1120),
+        scalar_param(mat, 'Mode', 0.0, -900, 1220),
+    ]
+    cloud_arg = 'HeightTex'   # never read without the sky
+    if clouds is not None:
+        names.append('CloudTex')
+        sources.append(texture_object_param(mat, 'CloudTex', clouds, -900, 1320))
+        cloud_arg = 'CloudTex'
+    code = (f'TGWorld W = TG_SkyQuality(TGWorld_{WORLD}(), CloudQuality, AtmosQuality);\n'
+            f'return TG_RenderAtlasTexelSky(W, HeightTex, {cloud_arg}, UV, CameraPos.xyz, AtlasHeading, FaceSize, '
+            'StartDistance, TerrainClearance, Mode);')
+    return finish_material(mat, 'Terragen sky texel', code, names, sources)
+
+
 def build_display_material(rt):
-    mat = get_or_create('M_TerragenSkyDisplay', DEST, unreal.Material, unreal.MaterialFactoryNew())
+    mat = get_or_create(f'M_TerragenSkyDisplay{SUFFIX}', DEST, unreal.Material, unreal.MaterialFactoryNew())
     MEL.delete_all_material_expressions(mat)
     mat.set_editor_property('shading_model', unreal.MaterialShadingModel.MSM_UNLIT)
     mat.set_editor_property('two_sided', True)
     mat.set_editor_property('is_sky', True)
     view = MEL.create_material_expression(mat, unreal.MaterialExpressionCameraVectorWS, -1100, 0)
-    plus_x = scalar_param(mat, 'HeadingAtPlusX', 18.0, -1100, 120)
-    heading = scalar_param(mat, 'AtlasHeading', 18.0, -1100, 220)
+    plus_x = scalar_param(mat, 'HeadingAtPlusX', HEADING, -1100, 120)
+    heading = scalar_param(mat, 'AtlasHeading', HEADING, -1100, 220)
     face = scalar_param(mat, 'FaceSize', ATLAS_SIZE / 4, -1100, 320)
     lookup = custom_node(
         mat, -750, 0, 'Atlas UV for view direction',
@@ -166,11 +260,11 @@ def build_display_material(rt):
     return mat
 
 
-def build_render_target():
-    rt = get_or_create('RT_TerragenSky', DEST, unreal.TextureRenderTarget2D, unreal.TextureRenderTargetFactoryNew())
-    rt.set_editor_property('size_x', ATLAS_SIZE)
-    rt.set_editor_property('size_y', ATLAS_SIZE)
-    rt.set_editor_property('render_target_format', unreal.TextureRenderTargetFormat.RTF_RGBA8)
+def build_render_target(name=None, size=ATLAS_SIZE, fmt=unreal.TextureRenderTargetFormat.RTF_RGBA8):
+    rt = get_or_create(name or f'RT_TerragenSky{SUFFIX}', DEST, unreal.TextureRenderTarget2D, unreal.TextureRenderTargetFactoryNew())
+    rt.set_editor_property('size_x', size)
+    rt.set_editor_property('size_y', size)
+    rt.set_editor_property('render_target_format', fmt)
     rt.set_editor_property('clear_color', unreal.LinearColor(0.0, 0.0, 0.0, 1.0))
     rt.set_editor_property('address_x', unreal.TextureAddress.TA_CLAMP)
     rt.set_editor_property('address_y', unreal.TextureAddress.TA_CLAMP)
@@ -178,39 +272,52 @@ def build_render_target():
     return rt
 
 
-def build_test_map():
+def build_test_map(render_mat, sky_mat, display_mat):
     actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
-    level_path = f'{DEST}/TerragenSkyTest'
+    level_path = f'{DEST}/TerragenSkyTest{SUFFIX}'
     unreal.EditorLoadingAndSavingUtils.new_blank_map(False)
     sky = actors.spawn_actor_from_class(unreal.TerragenSkybox, unreal.Vector(0, 0, 0))
+    if SUFFIX:
+        # The actor defaults to the MountainTop assets; it creates its material instances and render targets
+        # on first use, so pointing it elsewhere before that is enough.
+        sky.set_editor_property('render_material', render_mat)
+        sky.set_editor_property('sky_render_material', sky_mat)
+        sky.set_editor_property('display_material', display_mat)
+        sky.set_editor_property('terragen_start', unreal.Vector(*SETTINGS['start']))
+        sky.set_editor_property('heading_at_plus_x', HEADING)
+        sky.set_editor_property('atlas_heading', HEADING)
     floor = actors.spawn_actor_from_object(unreal.load_asset('/Engine/BasicShapes/Plane'), unreal.Vector(0, 0, 0))
     floor.set_actor_scale3d(unreal.Vector(200, 200, 1))
     actors.spawn_actor_from_class(unreal.PlayerStart, unreal.Vector(0, 0, 120))
-    # The Terragen sun is at heading 260, altitude 43. With HeadingAtPlusX = 18 that is Unreal yaw 242; the
-    # light points away from the sun: yaw 62, pitch -43.
-    sun = actors.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(0, 0, 500), unreal.Rotator(0, -43, 62))
-    sun.set_actor_label('Sun (Terragen heading 260, altitude 43)')
+    # A Terragen heading H is Unreal yaw H - HeadingAtPlusX; the light points away from the sun. MountainTop's
+    # sun (heading 260, altitude 43) gives yaw 62, pitch -43.
+    sun_heading, sun_altitude = SETTINGS['sun']
+    yaw = (sun_heading - HEADING) % 360.0 - 180.0
+    sun = actors.spawn_actor_from_class(unreal.DirectionalLight, unreal.Vector(0, 0, 500),
+                                        unreal.Rotator(0, -sun_altitude, yaw))
+    sun.set_actor_label(f'Sun (Terragen heading {sun_heading:g}, altitude {sun_altitude:g})')
     world = unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).get_editor_world()
     unreal.EditorLoadingAndSavingUtils.save_map(world, level_path)
     log(f'saved {level_path}')
     return sky
 
 
-def gpu_check(sky, rt):
+def gpu_check(sky):
     os.makedirs(OUT, exist_ok=True)
     unreal.TerragenSkybox.finish_compilation()
-    for frame in (1, 400):
-        start = sky.get_editor_property('terragen_start')
-        sky.set_editor_property('terragen_start', unreal.Vector(start.x, start.y, 45.647 + (frame - 1) * 0.067))
-        unreal.RenderingLibrary.clear_render_target2d(sky, rt, unreal.LinearColor(0, 0, 0, 1))
+    x0, y0, z0 = SETTINGS['start']
+    for frame in SETTINGS['frames']:
+        sky.set_editor_property('terragen_start', unreal.Vector(x0, y0, z0 + (frame - 1) * 0.067))
         sky.redraw_from_actor_location()
+        rt = sky.get_atlas()
         name = f'Atlas_GPU_{frame:04d}.png'
         unreal.RenderingLibrary.export_render_target(sky, rt, OUT, name)
+        unreal.RenderingLibrary.export_render_target(sky, sky.get_sky_atlas(), OUT, f'SkyAtlas_GPU_{frame:04d}.png')
         # A few raw texels, to check the PNG export against what the render target holds.
         probes = [(1280, 1200), (700, 1700), (1300, 1000)]
         raw = [sky_pixel(sky, rt, x, y) for x, y in probes]
         log(f'frame {frame}: exported {os.path.join(OUT, name)}; raw texels {raw}')
-    sky.set_editor_property('terragen_start', unreal.Vector(164.0, 223.0, 45.647))
+    sky.set_editor_property('terragen_start', unreal.Vector(x0, y0, z0))
 
     # Following the player: 300 m along Unreal +X, and 1 km below the actor (under the Terragen ground, so
     # the camera is lifted to the clearance above it). The Terragen positions go to follow.txt for the
@@ -219,17 +326,47 @@ def gpu_check(sky, rt):
         for label, offset in (('side', unreal.Vector(30000.0, 0.0, 0.0)), ('below', unreal.Vector(0.0, 0.0, -100000.0))):
             where = sky.get_actor_location() + offset
             tg = sky.to_terragen(where)
-            unreal.RenderingLibrary.clear_render_target2d(sky, rt, unreal.LinearColor(0, 0, 0, 1))
             sky.redraw_from(where)
-            unreal.RenderingLibrary.export_render_target(sky, rt, OUT, f'Atlas_GPU_{label}.png')
+            unreal.RenderingLibrary.export_render_target(sky, sky.get_atlas(), OUT, f'Atlas_GPU_{label}.png')
             f.write(f'{label} {tg.x:.6f} {tg.y:.6f} {tg.z:.6f}\n')
             log(f'{label}: Unreal {where} -> Terragen ({tg.x:.4f}, {tg.y:.4f}, {tg.z:.4f})')
 
     sky.redraw_from_actor_location()
-    ms = sky.measure_redraw_milliseconds(4)
-    log(f'full six-face redraw: {ms:.1f} ms')
+    # A player looking straight ahead (Unreal +X) with a 90-degree, 16:9 view.
+    ahead = (sky.get_actor_location(), unreal.Rotator(0, 0, 0), 90.0, 16.0 / 9.0)
+    timings = {
+        'full': sky.measure_redraw_milliseconds(4),
+        'sky_pass': sky.measure_pass_milliseconds(True, 4),
+        'reflection_pass': sky.measure_reflection_milliseconds(4),
+        'terrain_pass': sky.measure_pass_milliseconds(False, 4),
+        'visible_tiles_16x9_fov90': sky.measure_visible_milliseconds(*ahead, 4),
+    }
+    # The actor's defaults are CloudQuality 0.5 and AtmosQuality 1 (the world's own); other settings for comparison.
+    for cloud, atmos in ((1.0, 1.0), (0.5, 0.5), (0.25, 1.0)):
+        sky.set_editor_property('cloud_quality', cloud)
+        sky.set_editor_property('atmos_quality', atmos)
+        timings[f'sky_pass_cloud_{cloud}_atmos_{atmos}'] = sky.measure_pass_milliseconds(True, 4)
+    sky.set_editor_property('cloud_quality', 0.5)
+    sky.set_editor_property('atmos_quality', 1.0)
+    # Reflections computed exactly in the terrain pass, and a sharper 4096 terrain atlas (8 tiles per face side
+    # keeps the tiles at 128 pixels), each on a temporary actor.
+    actors = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+    for label, props in (('exact_reflections', {'reflection_atlas_size': 0}),
+                         ('atlas_4096', {'terrain_atlas_size': 4096, 'tiles_per_face_side': 8})):
+        temp = actors.spawn_actor_from_class(unreal.TerragenSkybox, sky.get_actor_location())
+        for prop in ('render_material', 'sky_render_material', 'display_material', 'terragen_start',
+                     'heading_at_plus_x', 'atlas_heading'):
+            temp.set_editor_property(prop, sky.get_editor_property(prop))
+        for prop, value in props.items():
+            temp.set_editor_property(prop, value)
+        temp.redraw_from_actor_location()
+        timings[f'{label}_terrain_pass'] = temp.measure_pass_milliseconds(False, 4)
+        timings[f'{label}_visible_tiles_16x9_fov90'] = temp.measure_visible_milliseconds(*ahead, 4)
+        actors.destroy_actor(temp)
     with open(os.path.join(OUT, 'timing.txt'), 'w') as f:
-        f.write(f'{ms:.2f}\n')
+        for name, ms in timings.items():
+            f.write(f'{name} {ms:.2f}\n')
+            log(f'{name}: {ms:.1f} ms')
 
 
 def sky_pixel(ctx, rt, x, y):
@@ -238,13 +375,22 @@ def sky_pixel(ctx, rt, x, y):
 
 
 def main():
-    height = import_texture(os.path.join(ROOT, 'Textures', 'prototype2_v2_height.png'), 'T_TerragenHeight_MountainTop')
-    noise = import_texture(os.path.join(ROOT, 'Textures', 'noise128.png'), 'T_TerragenNoise')
+    log(f'world {WORLD}')
+    # Both worlds use prototype2_v2.ter, so they share the height texture.
+    height = shared_texture(os.path.join(ROOT, 'Textures', 'prototype2_v2_height.png'), 'T_TerragenHeight_MountainTop')
+    noise = shared_texture(os.path.join(ROOT, 'Textures', 'noise128.png'), 'T_TerragenNoise')
+    clouds = None
+    if SETTINGS['clouds']:
+        clouds = import_texture(os.path.join(ROOT, 'Textures', SETTINGS['clouds']), f'T_TerragenClouds_{WORLD}')
+    # The render target assets are only defaults for the materials' texture parameters; the actor makes its own.
     rt = build_render_target()
-    build_render_material(height, noise)
-    build_display_material(rt)
-    sky = build_test_map()
-    gpu_check(sky, rt)
+    sky_rt = build_render_target(f'RT_TerragenSkyOnly{SUFFIX}', SKY_ATLAS_SIZE)
+    refl_rt = build_render_target(f'RT_TerragenReflSky{SUFFIX}', REFL_ATLAS_SIZE, unreal.TextureRenderTargetFormat.RTF_RGBA16F)
+    render_mat = build_render_material(height, noise, clouds, sky_rt, refl_rt)
+    sky_mat = build_sky_material(height, clouds)
+    display_mat = build_display_material(rt)
+    sky = build_test_map(render_mat, sky_mat, display_mat)
+    gpu_check(sky)
     log('done')
 
 
