@@ -21,6 +21,7 @@
 #include <Misc/Debug/MDebugHelper.h>
 
 DEFINE_LOG_CATEGORY(LogTemplateCharacter);
+DEFINE_LOG_CATEGORY(LogClimber);
 
 #define M_SAFE_WORLD_PERPENDICULAR_DOT 0.2
 
@@ -62,7 +63,10 @@ namespace MFMath // Murilo's FMath
 		// Convert ConeAngle from degrees to radians
 		float HalfConeAngleRad = FMath::DegreesToRadians(ConeAngle / 2.0f);
 
-		DrawDebugCone(InWorld, Origin, Direction, SweepLength, HalfConeAngleRad, HalfConeAngleRad, 32, FColor::Purple, false, 0.02f, 0, 0.05f);
+		M_DEBUG(HandTrace)
+		{
+			DrawDebugCone(InWorld, Origin, Direction, SweepLength, HalfConeAngleRad, HalfConeAngleRad, 32, FColor::Purple, false, 0.02f, 0, 0.05f);
+		}
 
 		// Perform the trace in multiple steps along the cone path
 		float PrevDistanceAlongCone = 0;
@@ -96,7 +100,10 @@ namespace MFMath // Murilo's FMath
 			{			
 				// Visualize the hit in the world (green if it's within the cone, red if outside)
 				FVector HitLocation = HitResult.ImpactPoint;
-				DrawDebugSphere(InWorld, HitLocation, 10.0f, 32, FColor::Yellow, false, 0.02f, 0, 0.25f);
+				M_DEBUG(HandTrace)
+				{
+					DrawDebugSphere(InWorld, HitLocation, 10.0f, 32, FColor::Yellow, false, 0.02f, 0, 0.25f);
+				}
 
 				// Calculate the angle between the hit point and the center direction of the cone
 				FVector HitDirection = (HitLocation - Origin).GetSafeNormal();
@@ -108,26 +115,24 @@ namespace MFMath // Murilo's FMath
 
 				// If the angle is within the cone, we accept the hit
 				if (AngleInDegrees <= ConeAngle / 2.0f)
-				{					
-					DrawDebugSphere(InWorld, FixedOrigin, ConeRadiusAtDistance * 0.75f, 8, FColor::Green, false, 0.02f, 0, ((Step + 1) / NumSteps) * 0.5f);
-					DrawDebugSphere(InWorld, End, ConeRadiusAtDistance, 16, FColor::Green, false, 0.02f, 0, (Step + 1) / NumSteps);
-#ifdef M_DEBUG_ENABLED
-					if (MDebugHelper::ShouldDrawTraceDebug())
+				{
+					M_DEBUG(HandTrace)
 					{
+						DrawDebugSphere(InWorld, FixedOrigin, ConeRadiusAtDistance * 0.75f, 8, FColor::Green, false, 0.02f, 0, ((Step + 1) / NumSteps) * 0.5f);
+						DrawDebugSphere(InWorld, End, ConeRadiusAtDistance, 16, FColor::Green, false, 0.02f, 0, (Step + 1) / NumSteps);
 						// Debug: If it's inside the cone, draw a green debug line
 						DrawDebugLine(InWorld, Origin, HitLocation, FColor::Green, false, 0.02f, 0, 1.0f);
 					}
-#endif
 					return true;
 				}
-				else
+				else M_DEBUG(HandTrace)
 				{
 					GEngine->AddOnScreenDebugMessage(34, 0.02f, FColor::Blue, FString::Printf(TEXT("Trace not accepted. Angle: %f"), AngleInDegrees));
 					DrawDebugSphere(InWorld, FixedOrigin, ConeRadiusAtDistance * 0.75f, 8, FColor::Blue, false, 0.02f, 0, ((Step + 1) / NumSteps) * 0.5f);
 					DrawDebugSphere(InWorld, End, ConeRadiusAtDistance, 16, FColor::Blue, false, 0.02f, 0, (Step + 1) / NumSteps);
 				}
 			}
-			else
+			else M_DEBUG(HandTrace)
 			{
 				DrawDebugSphere(InWorld, FixedOrigin, ConeRadiusAtDistance * 0.75f, 8, FColor::Red, false, 0.02f, 0, ((Step + 1) / NumSteps) * 0.5f);
 				DrawDebugSphere(InWorld, End, ConeRadiusAtDistance, 16, FColor::Red, false, 0.02f, 0, (Step + 1) / NumSteps);
@@ -576,8 +581,11 @@ FVector APrototype1Character::RotateActorRelativeLocationFromCamera(const FVecto
 	FRotator BodyRotation = Mesh1P->GetComponentRotation() + FRotator(0.0f, 90.0f, 0.0f);//GetActorRotation();
 	OutYawLockedRotation = FirstPersonCameraComponent->GetComponentRotation();
 	const FVector ActorLocation = GetActorLocation();
-	DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + BodyRotation.RotateVector(ActorRelativeLocation), 1.0f, FColor::Red, false, 0.02f, 0, 0);
-	DrawDebugPoint(GetWorld(), ActorLocation + BodyRotation.RotateVector(ActorRelativeLocation), 6.0f, FColor::Red, false, 0.02f, 0);
+	M_DEBUG(Camera)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + BodyRotation.RotateVector(ActorRelativeLocation), 1.0f, FColor::Red, false, 0.02f, 0, 0);
+		DrawDebugPoint(GetWorld(), ActorLocation + BodyRotation.RotateVector(ActorRelativeLocation), 6.0f, FColor::Red, false, 0.02f, 0);
+	}
 
 	//UE_LOG(LogTemp, Display, TEXT("RotationDelta Yaw: %f - Camera Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw);
 	//if (IsFreeLooking)
@@ -586,13 +594,13 @@ FVector APrototype1Character::RotateActorRelativeLocationFromCamera(const FVecto
 		if (RotationDelta.Yaw > FreeLookExtensionYawLimit)
 		{
 			const float YawDiff = RotationDelta.Yaw - FreeLookExtensionYawLimit;
-			UE_LOG(LogTemp, Display, TEXT("(1) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, OutYawLockedRotation.Yaw + YawDiff);
+			UE_LOG(LogClimber, Verbose, TEXT("(1) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, OutYawLockedRotation.Yaw + YawDiff);
 			OutYawLockedRotation = FRotator(OutYawLockedRotation.Pitch, OutYawLockedRotation.Yaw + YawDiff, OutYawLockedRotation.Roll);
 		}
 		if (RotationDelta.Yaw < -FreeLookExtensionYawLimit)
 		{
 			const float YawDiff = FreeLookExtensionYawLimit - RotationDelta.Yaw;
-			UE_LOG(LogTemp, Display, TEXT("(2) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, YawDiff - OutYawLockedRotation.Yaw);
+			UE_LOG(LogClimber, Verbose, TEXT("(2) RotationDelta Yaw: %f - Camera Yaw: %f - Yaw Diff: %f - Final Yaw: %f"), RotationDelta.Yaw, OutYawLockedRotation.Yaw, YawDiff, YawDiff - OutYawLockedRotation.Yaw);
 			OutYawLockedRotation = FRotator(OutYawLockedRotation.Pitch, YawDiff - OutYawLockedRotation.Yaw, OutYawLockedRotation.Roll);
 		}
 
@@ -603,11 +611,14 @@ FVector APrototype1Character::RotateActorRelativeLocationFromCamera(const FVecto
 	}
 	
 	const FVector LocationRelativeToCamera = ActorLocation + OutYawLockedRotation.RotateVector(ActorRelativeLocation);
-	DrawDebugDirectionalArrow(GetWorld(), ActorLocation, LocationRelativeToCamera, 1.0f, FColor::Green, false, 0.02f, 0, 0);
-	DrawDebugPoint(GetWorld(), LocationRelativeToCamera, 15.0f, FColor::Green, false, 0.02f, 0);
+	M_DEBUG(Camera)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), ActorLocation, LocationRelativeToCamera, 1.0f, FColor::Green, false, 0.02f, 0, 0);
+		DrawDebugPoint(GetWorld(), LocationRelativeToCamera, 15.0f, FColor::Green, false, 0.02f, 0);
 
-	// World debug
-	DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + OutYawLockedRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Purple, false, 0.02f, 0, 0);
+		// World debug
+		DrawDebugDirectionalArrow(GetWorld(), ActorLocation, ActorLocation + OutYawLockedRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Purple, false, 0.02f, 0, 0);
+	}
 
 	return LocationRelativeToCamera;
 }
@@ -620,9 +631,12 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	ProcessInputBuffers(DeltaSeconds);
 
 
-	const FVector CameraLocation = FirstPersonCameraComponent->GetComponentLocation();
-	const FRotator CameraRotation = FirstPersonCameraComponent->GetComponentRotation();
-	DrawDebugDirectionalArrow(GetWorld(), CameraLocation, CameraLocation + CameraRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Blue, false, 0.02f, 0, 0);
+	M_DEBUG(Camera)
+	{
+		const FVector CameraLocation = FirstPersonCameraComponent->GetComponentLocation();
+		const FRotator CameraRotation = FirstPersonCameraComponent->GetComponentRotation();
+		DrawDebugDirectionalArrow(GetWorld(), CameraLocation, CameraLocation + CameraRotation.RotateVector(FVector::ForwardVector) * 100.f, 1.0f, FColor::Blue, false, 0.02f, 0, 0);
+	}
 
 	TraceForHand(RightHandData);
 	TraceForHand(LeftHandData);
@@ -652,7 +666,10 @@ void APrototype1Character::Tick(float DeltaSeconds)
 	
 	if (FallToDeathTimer > 0.f)
 	{
-		GEngine->AddOnScreenDebugMessage(27, 3.5f, FColor::Red, FString::Printf(TEXT("Falling to death in: %fs"), FallToDeathTimer));
+		M_DEBUG(FallDeath)
+		{
+			GEngine->AddOnScreenDebugMessage(27, 3.5f, FColor::Red, FString::Printf(TEXT("Falling to death in: %fs"), FallToDeathTimer));
+		}
 		FallToDeathTimer -= DeltaSeconds;
 		if (FallToDeathTimer <= 0.f)
 		{
@@ -760,13 +777,19 @@ void APrototype1Character::ReleaseHand(const FHandsContextData& HandData)
 void APrototype1Character::StartFallingToDeathTime()
 {
 	FallToDeathTimer = FallToDeathTimeDuration;
-	GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Red, TEXT("Start Falling to Death Time"));
+	M_DEBUG(FallDeath)
+	{
+		GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Red, TEXT("Start Falling to Death Time"));
+	}
 }
 
 void APrototype1Character::StopFallingToDeathTime()
 {
 	FallToDeathTimer = 0.f;
-	GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Green, TEXT("Stop Falling to Death Time"));
+	M_DEBUG(FallDeath)
+	{
+		GEngine->AddOnScreenDebugMessage(23, 3.5f, FColor::Green, TEXT("Stop Falling to Death Time"));
+	}
 }
 
 void APrototype1Character::StartCoyoteTime()
@@ -927,9 +950,11 @@ void APrototype1Character::MoveHand(FHandsContextData& HandData, FVector2D LookA
 	const FVector MouseInput = GrabRot.RotateVector(FVector(0, LookAxisVector.X, LookAxisVector.Y));
 	const FVector MoveDir = -MouseInput;
 	
-	// Debugs
-	GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("MouseInput: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MouseInput * MouseClimbingSensitivity).Length(), MouseInput.Length(), *MouseInput.ToString()));
-	GEngine->AddOnScreenDebugMessage(54, 2.5f, FColor::Blue, FString::Printf(TEXT("MoveDir: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MoveDir * MouseClimbingSensitivity).Length(), MoveDir.Length(), *MoveDir.ToString()));
+	M_DEBUG_HAND(HandMove, HandData.HandIndex)
+	{
+		GEngine->AddOnScreenDebugMessage(0, 2.5f, FColor::Yellow, FString::Printf(TEXT("MouseInput: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MouseInput * MouseClimbingSensitivity).Length(), MouseInput.Length(), *MouseInput.ToString()));
+		GEngine->AddOnScreenDebugMessage(54, 2.5f, FColor::Blue, FString::Printf(TEXT("MoveDir: (w/ sensitivity: %f - w/o sensitivity: %f) - %s"), (MoveDir * MouseClimbingSensitivity).Length(), MoveDir.Length(), *MoveDir.ToString()));
+	}
 
 	// HandMoveDir should not exceed a unit vector, we only want the mouse sensitivity to help with the movement, but we can't exceed 1
 	// otherwise we would be applying more force than designed in our CMC
@@ -984,13 +1009,11 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 
 	HandData.CurrentFrameTracedHitResult = HitResult;
 
-#ifdef M_DEBUG_ENABLED
-	if (MDebugHelper::ShouldDrawTraceDebug())
+	M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 	{
 		GEngine->AddOnScreenDebugMessage(5, 2.5f, FColor::Yellow, FString::Printf(TEXT("Trace Vertical Extension: %f"), TraceVerticalExtension));
 		DrawDebugLine(GetWorld(), TraceStart, TraceEnd, (HitResult.bBlockingHit) ? FColor::Green : FColor::Red, false, 0.02f, 0, 1.0f);
 	}
-#endif
 
 	if (HitResult.bBlockingHit)
 	{
@@ -1005,13 +1028,10 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 			float& HandInputBuffer = (HandData.HandIndex == 0) ? RightHandGrabInputBuffer : LeftHandGrabInputBuffer;
 			if (HandInputBuffer > 0.f)
 			{
-
-#ifdef M_DEBUG_ENABLED
-				if (MDebugHelper::ShouldDrawTraceDebug())
+				M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 				{
 					GEngine->AddOnScreenDebugMessage(410, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid trace!"));
 				}
-#endif
 
 				Interact(HandData.HandIndex);
 				HandInputBuffer = 0.f;
@@ -1054,8 +1074,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 		SweepTraceStart = SweepTraceStartFixed + ProjDir;			
 	}		
 
-#ifdef M_DEBUG_ENABLED
-	if (MDebugHelper::ShouldDrawTraceDebug())
+	M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 	{
 		// TODO: Fix these DrawDebugs, since using fullbody the hand collision shape is a box.
 		DrawDebugCapsule(GetWorld(), SweepTraceStart, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.5f);
@@ -1065,7 +1084,6 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceEndFixed + SweepDir, 1.0f, FColor::Yellow, false, 0.02f, 0, 0.5f);
 		DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceEndFixed + SweepDirProjected, 1.0f, FColor::Green, false, 0.02f, 0, 0.5f);
 	}
-#endif
 
 
 	for (int BinarySweepCount = 0; BinarySweepCount < 3; BinarySweepCount++)
@@ -1077,8 +1095,7 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 				const float AngleDiff = FMath::RadiansToDegrees(FMath::Acos(HitResult.ImpactNormal | SweepPlaneNormal));
 				if (AngleDiff <= 35.0f)
 				{
-#ifdef M_DEBUG_ENABLED
-					if (MDebugHelper::ShouldDrawTraceDebug())
+					M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 					{
 						DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Blue, false, 0.02f, 0, 1.0f);
 						DrawDebugDirectionalArrow(GetWorld(), SweepTraceStartFixed, SweepTraceStartFixed + SweepPlaneNormal * 10.0f, 1.0f, FColor::Orange, false, 0.02f, 0, 0.75f);
@@ -1089,7 +1106,6 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 						DrawDebugCapsule(GetWorld(), HitResult.ImpactPoint, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Purple, false, 0.02f, 0, 1.0f);
 						DrawDebugDirectionalArrow(GetWorld(), HitResult.ImpactPoint, HitResult.ImpactPoint + HitResult.ImpactNormal * 10.0f, 1.0f, FColor::Purple, false, 0.02f, 0, 0.75f);
 					}
-#endif
 
 					// Hand is ready to grab.
 
@@ -1100,32 +1116,31 @@ void APrototype1Character::TraceForHand(FHandsContextData& HandData)
 					float& HandInputBuffer = (HandData.HandIndex == 0) ? RightHandGrabInputBuffer : LeftHandGrabInputBuffer;
 					if (HandInputBuffer > 0.f)
 					{
-						GEngine->AddOnScreenDebugMessage(420, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid secondary trace!"));
+						M_DEBUG_HAND(HandTrace, HandData.HandIndex)
+						{
+							GEngine->AddOnScreenDebugMessage(420, 5.f, FColor::Yellow, TEXT("Triggering Grab from Input Buffer as we have a valid secondary trace!"));
+						}
 						Interact(HandData.HandIndex);
 						HandInputBuffer = 0.f;
 					}
 					return;
 				}
-#ifdef M_DEBUG_ENABLED
-				else if (MDebugHelper::ShouldDrawTraceDebug())
+				else M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 				{
 					DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Red, false, 0.02f, 0, 0.25f);
 					DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceStartFixed, 1.0f, FColor::Red, false, 0.02f, 0, 0.25f);
 				}
-#endif
 			}
 			else
 			{
 				UE_LOG(LogTemp, VeryVerbose, TEXT("Found actor %s but it's UInteractableActorComponent is set to no interaction. Skipping.."), *HitResult.GetActor()->GetName());
 			}
 		}
-#ifdef M_DEBUG_ENABLED
-		else if (MDebugHelper::ShouldDrawTraceDebug())
+		else M_DEBUG_HAND(HandTrace, HandData.HandIndex)
 		{
 			DrawDebugCapsule(GetWorld(), SweepTraceStartFixed, HandData.HandCollisionShape.GetCapsuleHalfHeight(), HandData.HandCollisionShape.GetCapsuleRadius(), HandRotation, FColor::Magenta, false, 0.02f, 0, 0.25f);
 			DrawDebugDirectionalArrow(GetWorld(), SweepTraceEndFixed, SweepTraceStartFixed, 1.0f, FColor::Yellow, false, 0.02f, 0, 0.25f);
 		}
-#endif
 
 		SweepTraceStartFixed = UKismetMathLibrary::VLerp(SweepTraceStartFixed, SweepTraceStart, 0.5f);	// Binary lerp.	
 	}
@@ -1211,8 +1226,11 @@ void APrototype1Character::Interact(int HandIndex)
 	}
 
 	HandData.HandToWorldTransform = HandData.WorldToHandTransform.Inverse();
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
-	DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+	M_DEBUG_HAND(HandSpace, HandIndex)
+	{
+		DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.WorldToHandTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+		DrawDebugCoordinateSystem(GEngine->GetWorld(), GrabLocation, HandData.HandToWorldTransform.Rotator(), 10.0f, true, 35.0f, 0, 1.0f);
+	}
 
 	SetupArm(HandIndex, ASETUP_Climbing);
 
@@ -1386,26 +1404,34 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	const float StretchRatio = FMath::Max((ArmCurrentLength - ArmMaxStretchedLength) / ArmMaxStretchedLength, 0.0f);
 	HandData.IsOverstretched = ArmCurrentLength >= ArmMaxStretchedLength;
 
-	GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("ArmCurrentLength: %f - ArmMaxRelaxedLength: %f - ArmMaxStretchedLength: %f - Stretch Ratio: %f"), ArmCurrentLength, ArmMaxRelaxedLength, ArmMaxStretchedLength, StretchRatio));
-	//GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"), 
+	M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
+	{
+		GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("ArmCurrentLength: %f - ArmMaxRelaxedLength: %f - ArmMaxStretchedLength: %f - Stretch Ratio: %f"), ArmCurrentLength, ArmMaxRelaxedLength, ArmMaxStretchedLength, StretchRatio));
+	}
+	//GEngine->AddOnScreenDebugMessage(6, 0.1f, FColor::Emerald, FString::Printf(TEXT("Angle: %f (n: %f) - Stretch Multiplier: %f - Initial Arms Length: %f - Final Arms Length: %f"),
 	//Angle, AngleNormalized, StretchMultiplier, ArmsLengthUnits, ArmsLengthUnits * StretchMultiplier));
-	
+
 	// Apply relaxed->overstretched spring.
 	const float SpringReadiness = FMath::SmoothStep(ArmMinRelaxedLength, ArmMaxRelaxedLength, ArmCurrentLength);
-	GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Silver, FString::Printf(TEXT("SpringReadiness: %f"), SpringReadiness));
+	M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
+	{
+		GEngine->AddOnScreenDebugMessage(7, 0.1f, FColor::Silver, FString::Printf(TEXT("SpringReadiness: %f"), SpringReadiness));
+	}
 	if (SpringReadiness > 0.0f)
 	{
-		GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Blue, FString::Printf(TEXT("Applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
-		
 		const FVector RelaxedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier * ArmRelaxedT;
 		const FVector SpringForce = HandLocation + RelaxedArmVector - UpperArmOffset;
 		const FVector SpringForceProjected = FVector::VectorPlaneProject(SpringForce, HandNormal);
 		ArmSpringForce += SpringForce;
 
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
-		DrawDebugDirectionalArrow(GetWorld(), UpperArmOffset, UpperArmOffset + SpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
+		M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
+		{
+			GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Blue, FString::Printf(TEXT("Applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
+			DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + RelaxedArmVector, 0.7f, FColor::Purple, false, 0.25f, 10, 0.75f);
+			DrawDebugDirectionalArrow(GetWorld(), UpperArmOffset, UpperArmOffset + SpringForce, 1.0f, FColor::Blue, false, 0.25f, 20, 1.0f);
+		}
 	}
-	else
+	else M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
 	{
 		GEngine->AddOnScreenDebugMessage(87 + HandData.HandIndex, 0.1f, FColor::Green, FString::Printf(TEXT("Not applying %s arm spring to relaxed state"), *HandData.HandBoneName.ToString()));
 	}
@@ -1413,13 +1439,16 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 	// If Arm is Overstretched (limb limit), then we'll want to move the root so as to get the shoulder in the correct position such as ArmVector.Length() == ArmsLengthUnitsSquared
 	if (HandData.IsOverstretched)
 	{
-		GEngine->AddOnScreenDebugMessage(77, 0.1f, FColor::Red, TEXT("Applying arm limit snap."));
-		
-		// Stretched visualization.
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - UpperArmOffset, 1.0f, FColor::Red, false, 0.25f, 1, 1.0f);
-		
 		const FVector FixedArmVector = OutArmVector.GetSafeNormal() * ArmsLengthUnits * StretchMultiplier;
-		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 5, 0.5f);
+
+		M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
+		{
+			GEngine->AddOnScreenDebugMessage(77, 0.1f, FColor::Red, TEXT("Applying arm limit snap."));
+
+			// Stretched visualization.
+			DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation - UpperArmOffset, 1.0f, FColor::Red, false, 0.25f, 1, 1.0f);
+			DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + FixedArmVector, 1.0f, FColor::Green, false, 0.25f, 5, 0.5f);
+		}
 
 		TryToSlipHand(HandData, FixedArmVector, StretchRatio, DeltaSeconds);
 		// TODO: Need to find a way to have a hand grip strength to drive how much we slip vs how much we compensate by the overstretching.
@@ -1437,7 +1466,10 @@ FVector APrototype1Character::CalculateArmConstraint(FHandsContextData& HandData
 		// IMPORTANT: Commented code is how the equation was prior. But due to vector math I managed to reduce it to the following one.
 		//RootDeltaFix = (UpperArmOffset + ArmDiff + ShoulderRootDir) - RootLocation;
 		RootDeltaFix = HandLocation + FixedArmVector - UpperArmOffset;
-		DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Red, false, 0.25f, 0, 1.0f);
+		M_DEBUG_HAND(ArmConstraint, HandData.HandIndex)
+		{
+			DrawDebugDirectionalArrow(GetWorld(), RootLocation, RootLocation + RootDeltaFix, 1.0f, FColor::Red, false, 0.25f, 0, 1.0f);
+		}
 	}
 
 	HandData.IsExertingForce = HandData.IsOverstretched || SpringReadiness > 0.0f;
@@ -1453,7 +1485,10 @@ bool APrototype1Character::TryToSlipHand(FHandsContextData& HandData, const FVec
 	const FVector HandRelativeUp = FVector::VectorPlaneProject(FirstPersonCameraComponent->GetUpVector(), HandNormal).GetSafeNormal();
 	const FVector ProjectedArmVector = FVector::VectorPlaneProject(ArmVector, HandNormal).GetSafeNormal();
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
+	M_DEBUG_HAND(HandSlip, HandData.HandIndex)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandLocation + ProjectedArmVector, 1.0f, FColor::Yellow, false, 0.25f, 0, 0.5f);
+	}
 
 	const bool bShouldSlip = SlipRatio >= MinStretchRatioToSlip;
 	if (!bShouldSlip)
@@ -1515,8 +1550,11 @@ FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& Ha
 	const FVector HandLocation = HandData.GetHandLocation();
 	const FQuat HandRotation = GetHandRotation(HandData).Quaternion();
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, SlipTarget, 1.0f, FColor::Red, false, 10.25f, 0, 0.5f);
-	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 10.25f, 0, 1.0f);
+	M_DEBUG_HAND(HandSlip, HandData.HandIndex)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, SlipTarget, 1.0f, FColor::Red, false, 10.25f, 0, 0.5f);
+		DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 10.25f, 0, 1.0f);
+	}
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
@@ -1530,10 +1568,13 @@ FVector APrototype1Character::ValidateHandSlipTarget(const FHandsContextData& Ha
 		{
 			if (HR.GetActor() == HandData.HitActor)
 			{
-				const float AngleDiff = FMath::RadiansToDegrees(FMath::Asin(HR.Normal | HandData.GetHandNormal()));
-				DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 10.25f, 0, 1.0f);
-				DrawDebugCapsule(GetWorld(), SlipTarget, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 10.25f, 0, 1.0f);
-				GEngine->AddOnScreenDebugMessage(36, 10.25f, FColor::Yellow, FString::Printf(TEXT("Angle Diff of Slip Target Normal and Current Hand Normal: %f"), AngleDiff));
+				M_DEBUG_HAND(HandSlip, HandData.HandIndex)
+				{
+					const float AngleDiff = FMath::RadiansToDegrees(FMath::Asin(HR.Normal | HandData.GetHandNormal()));
+					DrawDebugCapsule(GetWorld(), HR.ImpactPoint, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Green, false, 10.25f, 0, 1.0f);
+					DrawDebugCapsule(GetWorld(), SlipTarget, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Blue, false, 10.25f, 0, 1.0f);
+					GEngine->AddOnScreenDebugMessage(36, 10.25f, FColor::Yellow, FString::Printf(TEXT("Angle Diff of Slip Target Normal and Current Hand Normal: %f"), AngleDiff));
+				}
 
 				return SlipTarget;
 			}
@@ -1551,9 +1592,12 @@ FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, 
 
 	const FVector HandMoveDestination = HandLocation + MoveDelta;
 
-	DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandMoveDestination, 10.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
-	DrawDebugCapsule(GetWorld(), HandMoveDestination, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
-	DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+	M_DEBUG_HAND(HandMove, HandData.HandIndex)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), HandLocation, HandMoveDestination, 10.0f, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		DrawDebugCapsule(GetWorld(), HandMoveDestination, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+		DrawDebugCapsule(GetWorld(), HandLocation, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Yellow, false, 0.02f, 0, 1.0f);
+	}
 
 	FCollisionQueryParams QueryParams;
 	QueryParams.AddIgnoredActor(this);
@@ -1569,7 +1613,10 @@ FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, 
 				const float AngleDiff = FMath::RadiansToDegrees(FMath::Acos(MoveDeltaHitResult.ImpactNormal | HandNormal));
 				if (AngleDiff <= MaxSlipHandAngle)
 				{
-					DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.Location, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 0.02f, 0, 1.0f);
+					M_DEBUG_HAND(HandMove, HandData.HandIndex)
+					{
+						DrawDebugCapsule(GetWorld(), MoveDeltaHitResult.Location, HandPhysicalHeight, HandPhysicalRadius, HandRotation, FColor::Purple, false, 0.02f, 0, 1.0f);
+					}
 
 					HandData.StoreHit(MoveDeltaHitResult, MoveDeltaHitResult.Location, MoveDeltaHitResult.ImpactNormal);
 					return MoveDeltaHitResult.Location;//HandMoveDestination;
@@ -1577,14 +1624,20 @@ FVector APrototype1Character::MoveHandGrabLocation(FHandsContextData& HandData, 
 			}
 			else
 			{
-				UE_LOG(LogTemp, Display, TEXT("[APrototype1Character::MoveHandGrabLocation] Got a trace with a negative incline."));
-				GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Yellow, TEXT("[APrototype1Character::MoveHandGrabLocation] Got a trace with a negative incline."));
+				UE_LOG(LogClimber, Verbose, TEXT("[APrototype1Character::MoveHandGrabLocation] Got a trace with a negative incline."));
+				M_DEBUG_HAND(HandMove, HandData.HandIndex)
+				{
+					GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Yellow, TEXT("[APrototype1Character::MoveHandGrabLocation] Got a trace with a negative incline."));
+				}
 			}
 		}
 	}
 
-	UE_LOG(LogTemp, Display, TEXT("[APrototype1Character::MoveHandGrabLocation] Hand slipped off surface."));
-	GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Red, TEXT("[APrototype1Character::MoveHandGrabLocation] Hand slipped off surface."));
+	UE_LOG(LogClimber, Verbose, TEXT("[APrototype1Character::MoveHandGrabLocation] Hand slipped off surface."));
+	M_DEBUG_HAND(HandMove, HandData.HandIndex)
+	{
+		GEngine->AddOnScreenDebugMessage(18, 5.f, FColor::Red, TEXT("[APrototype1Character::MoveHandGrabLocation] Hand slipped off surface."));
+	}
 
 	ReleaseHand(HandData);
 	return HandLocation;
@@ -1684,9 +1737,12 @@ FVector APrototype1Character::RotateToHand(const FHandsContextData& HandData, co
 	//const FQuat HandToWorldTransform = GetHandRotation(HandData).Quaternion().Inverse();
 	const FQuat HandToWorldTransform = HandData.HandToWorldTransform;
 
-	const FVector HandLoc = HandData.GetHandLocation();
-	DrawDebugCoordinateSystem(GetWorld(), HandLoc, HandToWorldTransform.Rotator(), 10.0f, false, 0.15f, 0, 1.0f);
-	DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + HandToWorldTransform.RotateVector(WorldRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
+	M_DEBUG_HAND(HandSpace, HandData.HandIndex)
+	{
+		const FVector HandLoc = HandData.GetHandLocation();
+		DrawDebugCoordinateSystem(GetWorld(), HandLoc, HandToWorldTransform.Rotator(), 10.0f, false, 0.15f, 0, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + HandToWorldTransform.RotateVector(WorldRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
+	}
 
 	return HandToWorldTransform.RotateVector(WorldRelative);
 }
@@ -1698,9 +1754,12 @@ FVector APrototype1Character::RotateToWorld(const FHandsContextData& HandData, c
 	//const FQuat WorldToHandTransform = GetHandRotation(HandData).Quaternion();
 	const FQuat WorldToHandTransform = HandData.WorldToHandTransform;
 
-	const FVector HandLoc = HandData.GetHandLocation() - FVector::UpVector * 10.0f;
-	DrawDebugCoordinateSystem(GetWorld(), HandLoc, WorldToHandTransform.Rotator(), 15.0f, false, 0.15f, 0, 1.0f);
-	DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + WorldToHandTransform.RotateVector(HandRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
+	M_DEBUG_HAND(HandSpace, HandData.HandIndex)
+	{
+		const FVector HandLoc = HandData.GetHandLocation() - FVector::UpVector * 10.0f;
+		DrawDebugCoordinateSystem(GetWorld(), HandLoc, WorldToHandTransform.Rotator(), 15.0f, false, 0.15f, 0, 1.0f);
+		DrawDebugDirectionalArrow(GetWorld(), HandLoc, HandLoc + WorldToHandTransform.RotateVector(HandRelative), 10.f, FColor::White, false, 0.15f, 0, 1.0f);
+	}
 
 	return WorldToHandTransform.RotateVector(HandRelative);
 }

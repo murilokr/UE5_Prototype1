@@ -8,7 +8,12 @@ public class Prototype1 : ModuleRules
 	{
 		PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
 
-        // TODO: UnrealEd is for debug builds. Find a way to remove it in shipping/dev builds.
-        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput", "UnrealEd" }); 
+        PublicDependencyModuleNames.AddRange(new string[] { "Core", "CoreUObject", "Engine", "InputCore", "EnhancedInput" });
+
+        // UnrealEd is only used by MDebugHelper::PausePIE (WITH_EDITOR).
+        if (Target.bBuildEditor)
+        {
+            PrivateDependencyModuleNames.Add("UnrealEd");
+        }
 	}
 }

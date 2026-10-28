@@ -23,6 +23,9 @@ enum EInteractType : int;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogTemplateCharacter, Log, All);
 
+// Climbing gameplay logs are Verbose, so hidden by default. Show them with "log LogClimber Verbose".
+DECLARE_LOG_CATEGORY_EXTERN(LogClimber, Log, All);
+
 UENUM(BlueprintType)
 enum EArmSetupType
 {

@@ -60,7 +60,10 @@ namespace MovementClimbingUtils
 
 				//DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectLocalToWorld.InverseTransformPosition(HandData.HandSurfaceLocalLocation), GrabObjectLocalToWorld.InverseTransformPosition(HandData.HandSurfaceLocalLocation) + ForceToApply, 2.f, FColor::Green, false, 0.025f, 0, 1.f);
 				
-				GEngine->AddOnScreenDebugMessage(102, DeltaTime, FColor::Yellow, TEXT("UPDATE GRABBABLE OBJECT VELOCITY"));
+				M_DEBUG_HAND(GrabbedObject, HandData.HandIndex)
+				{
+					GEngine->AddOnScreenDebugMessage(102, DeltaTime, FColor::Yellow, TEXT("UPDATE GRABBABLE OBJECT VELOCITY"));
+				}
 				const FVector GrabObjectLocation = GrabObject->GetComponentLocation();
 				FVector GrabObjectVelocity = GrabObjectLocation - PrevHandObjectLocation; //TODO: THIS ISNT ACTUALLY SPEED! WE NEED TO DIVIDE BY DeltaTime!!!!!!!!!!
 				GrabObjectVelocity = PrevHandObjectVelocity;
@@ -101,19 +104,24 @@ namespace MovementClimbingUtils
 					GrabObject->AddImpulseAtLocation(ImpulseToAddToObject, GrabObjectLocalToWorld.TransformPosition(HandData.HandSurfaceLocalLocation), HandData.HitBoneName);
 				}
 
-				// Debugs
-				const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.HandSurfaceLocalLocation);
-				DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
-				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
-				DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
+				M_DEBUG_HAND(GrabbedObject, HandData.HandIndex)
+				{
+					const FVector GrabObjectHandWorldLocation = GrabObjectLocalToWorld.TransformPosition(HandData.HandSurfaceLocalLocation);
+					DrawDebugSphere(GrabObject->GetWorld(), GrabObjectHandWorldLocation, 25.f, 16, FColor::Silver);
+					DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ArmFixVector * 10.f, 2.f, FColor::Blue, false, 0.025f, 0, 1.f);
+					DrawDebugDirectionalArrow(GrabObject->GetWorld(), GrabObjectHandWorldLocation, GrabObjectHandWorldLocation + ForceToAddToObject, 1.5f, FColor::Emerald, false, 0.025, 0, 0.5f);
+				}
 
 				const float GrabObjectVelocitySize = GrabObjectVelocity.SizeSquared();
 				if (GrabObjectVelocitySize > 100.f)
 				{
-					GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
-						FString::Printf(TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-							*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
-					UE_LOG(LogTemp, Display, TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+					M_DEBUG_HAND(GrabbedObject, HandData.HandIndex)
+					{
+						GEngine->AddOnScreenDebugMessage(21, 2.5f, FColor::Green,
+							FString::Printf(TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+								*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+					}
+					UE_LOG(LogClimber, Verbose, TEXT("Letting go of grabbed object, since it moved! P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
 						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
 
 					/*if (APrototype1Character* ClimberCharacter = Cast<APrototype1Character>(ClimberCMC->GetCharacterOwner()))
@@ -123,10 +131,13 @@ namespace MovementClimbingUtils
 				}
 				else
 				{
-					GEngine->AddOnScreenDebugMessage(20, 1.0f, FColor::Green,
-						FString::Printf(TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
-							*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
-					UE_LOG(LogTemp, Display, TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+					M_DEBUG_HAND(GrabbedObject, HandData.HandIndex)
+					{
+						GEngine->AddOnScreenDebugMessage(20, 1.0f, FColor::Green,
+							FString::Printf(TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
+								*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize));
+					}
+					UE_LOG(LogClimber, Verbose, TEXT("Still grabbing object. P.L: [%s] - C.L: [%s] = V [%s] (%f)"),
 						*PrevHandObjectLocation.ToString(), *GrabObjectLocation.ToString(), *GrabObjectVelocity.ToString(), GrabObjectVelocitySize);
 				}
 
@@ -177,6 +188,12 @@ void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELe
 
 		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
 		HelperSpringIntensity = HelperSpringIntensityFalloffCurve->GetFloatValue(FalloffTime) * HelperSpringMaxIntensity;
+	}
+
+	// Drawn both while the helper spring is active and idle.
+	M_DEBUG(HelperSpring)
+	{
+		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
 
 		const float dThickness = FMath::Lerp(0.75f, 0.2f, FalloffTime);
 		const FLinearColor dColor = FLinearColor::LerpUsingHSV(FLinearColor::Blue, FColor::Red, FalloffTime);
@@ -184,18 +201,6 @@ void UClimberCharacterMovementComponent::TickComponent(float DeltaTime, enum ELe
 		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
 		//GEngine->AddOnScreenDebugMessage(44, DeltaTime, FColor::Yellow, FString::Printf(TEXT("HelperSpring - Intensity: %f - Timer: %f - dThickness: %f"), HelperSpringIntensity, HelperSpringIntensityFalloffTimer, dThickness));
 	}
-#ifdef M_DEBUG_ENABLED
-	else // for debug
-	{
-		const float FalloffTime = 1.0f - FMath::SmoothStep(0.0f, HelperSpringIntensityFalloffDuration, HelperSpringIntensityFalloffTimer);
-		
-		const float dThickness = FMath::Lerp(0.75f, 0.2f, FalloffTime);
-		const FLinearColor dColor = FLinearColor::LerpUsingHSV(FColor::Blue, FColor::Red, FalloffTime);
-		const FVector SpringDirection = HelperSpringAnchor - UpdatedComponent->GetComponentLocation();
-		DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + SpringDirection, 1.0f, dColor.ToFColor(false), false, 0.025f, 10, dThickness);
-		//GEngine->AddOnScreenDebugMessage(44, 5.0f, FColor::Red, FString::Printf(TEXT("HelperSpringIntensity: %f"), HelperSpringIntensity));
-	}
-#endif
 }
 
 void UClimberCharacterMovementComponent::OnStartClimbing()
@@ -259,7 +264,10 @@ void UClimberCharacterMovementComponent::OnMovementUpdated(float DeltaSeconds, c
 		const bool bWasJumping = ClimberCharacterOwner->bWasJumping || ClimberCharacterOwner->bPressedJump;
 		if (MovementMode == MOVE_Falling)
 		{
-			GEngine->AddOnScreenDebugMessage(26, 3.5f, FColor::Yellow, FString::Printf(TEXT("Falling velocity: %f"), Velocity.Z));
+			M_DEBUG(FallDeath)
+			{
+				GEngine->AddOnScreenDebugMessage(26, 3.5f, FColor::Yellow, FString::Printf(TEXT("Falling velocity: %f"), Velocity.Z));
+			}
 			if (!ClimberCharacterOwner->IsAlmostFallingToDeath() && Velocity.Z < ClimberCharacterOwner->FallToDeathMinSpeed)
 			{
 				ClimberCharacterOwner->StartFallingToDeathTime();
@@ -297,7 +305,10 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 		RightHandMeshDir = FVector::DotProduct(CharacterForward, MeshToRightHand);
 		if (FMath::IsNearlyZero(RightHandMeshDir, 0.05f))
 		{
-			GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("RightHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), RightHandMeshDir));
+			M_DEBUG(WallPull)
+			{
+				GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("RightHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), RightHandMeshDir));
+			}
 			return;
 		}
 		
@@ -311,14 +322,20 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 		LeftHandMeshDir = FVector::DotProduct(CharacterForward, MeshToLeftHand);
 		if (FMath::IsNearlyZero(LeftHandMeshDir, 0.05f))
 		{
-			GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("LeftHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), LeftHandMeshDir));
+			M_DEBUG(WallPull)
+			{
+				GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Red, FString::Printf(TEXT("LeftHandMeshDir is nearly zero (perpendicular): %f - So we are not forcing horizontal move input"), LeftHandMeshDir));
+			}
 			return;
 		}
 		
 		IsInFrontOfHands |= LeftHandMeshDir <= 0;
 	}
 	
-	GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Blue, FString::Printf(TEXT("RightHandMeshDir: %f - LeftHandMeshDir: %f - IsInFrontOfHands: %hhd"), RightHandMeshDir, LeftHandMeshDir, IsInFrontOfHands));
+	M_DEBUG(WallPull)
+	{
+		GEngine->AddOnScreenDebugMessage(43, 0.16, FColor::Blue, FString::Printf(TEXT("RightHandMeshDir: %f - LeftHandMeshDir: %f - IsInFrontOfHands: %hhd"), RightHandMeshDir, LeftHandMeshDir, IsInFrontOfHands));
+	}
 
 	if (!IsInFrontOfHands && HandMoveDir.IsZero())
 	{
@@ -334,7 +351,10 @@ void UClimberCharacterMovementComponent::ForcePullOrPushHorizontalMovementToward
 	const double IsPlayerInputOpposite = FVector::DotProduct(HorizontalHandsControlAcceleration, ForceInputDirection);
 	if (IsPlayerInputOpposite > 0.85f || HorizontalHandsControlAcceleration.IsNearlyZero()) // There's no input being applied to the character
 	{
-		GEngine->AddOnScreenDebugMessage(136, 0.2f, FColor::Green, (IsInFrontOfHands) ? TEXT("Force pushing against wall") : TEXT("Force pulling towards wall"));
+		M_DEBUG(WallPull)
+		{
+			GEngine->AddOnScreenDebugMessage(136, 0.2f, FColor::Green, (IsInFrontOfHands) ? TEXT("Force pushing against wall") : TEXT("Force pulling towards wall"));
+		}
 		HorizontalHandsControlAcceleration = ScaleInputAcceleration(ForceInputDirection);
 	}
 }
@@ -388,14 +408,20 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 		{
 			if (ClimberCharacterOwner)
 			{
-				GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+				M_DEBUG(Velocity)
+				{
+					GEngine->AddOnScreenDebugMessage(1, 1.0f, FColor::Green, FString::Printf(TEXT("Applying acceleration. Move dir (%f - %s). Acceleration: (%f - %s)"), HandMoveDir.Length(), *HandMoveDir.ToString(), Acceleration.Length(), *Acceleration.ToString()));
+				}
 
 				// If HandMoveDir is nearly zero, we are going to add a temporary virtual arm spring, to try and keep the player in the same position for a few frames.
 				// It actually needs to be processed over a few frames, as we need to keep updating this virtual arm spring target. When should it be active?
 				// Should it be one "extra" arm that does the load for the two arms? Or as an extra spring for each arm, but with lower force?
-				// The force of the spring should deteriorate over the period of this virtual arm spring existence, so that over time the force get lower until it releases. 
-				
-				DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + HandMoveDir * 10.0f, 0.f, FColor::Orange, false, 0.02f, 1, 0.25f);
+				// The force of the spring should deteriorate over the period of this virtual arm spring existence, so that over time the force get lower until it releases.
+
+				M_DEBUG(Velocity)
+				{
+					DrawDebugDirectionalArrow(GetWorld(), UpdatedComponent->GetComponentLocation(), UpdatedComponent->GetComponentLocation() + HandMoveDir * 10.0f, 0.f, FColor::Orange, false, 0.02f, 1, 0.25f);
+				}
 
 				ClimbingAcceleration += HandMoveDir * MoveIntensityMultiplier;
 				HandMoveDir = FVector::ZeroVector;
@@ -454,7 +480,10 @@ void UClimberCharacterMovementComponent::PhysClimbing(float DeltaSeconds, int32 
 
 		FVector OldLocation = UpdatedComponent->GetComponentLocation();
 		const FVector Delta = Velocity * timeTick;
-		DrawDebugDirectionalArrow(GetWorld(), OldLocation, OldLocation + Delta * 100.0f, 0.f, FColor::Green, false, 0.02f, 2, 1.25f);
+		M_DEBUG(Velocity)
+		{
+			DrawDebugDirectionalArrow(GetWorld(), OldLocation, OldLocation + Delta * 100.0f, 0.f, FColor::Green, false, 0.02f, 2, 1.25f);
+		}
 
 		// The actual movement.
 		// We can try to move the ClimbingCollider before, and check for collisions then.
@@ -517,8 +546,11 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		//ClimbingAcceleration += ((ArmSpringForce * ArmSpringForceIntensity) + -Velocity * ArmSpringDampening) / Mass;
 		HandAcceleration += ArmSpringAcceleration;
 
-		GEngine->AddOnScreenDebugMessage(2 + HandIndex, 1.0f, FColor::Cyan, FString::Printf(TEXT("Applying (%i) arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
+		M_DEBUG_HAND(HandForces, HandIndex)
+		{
+			GEngine->AddOnScreenDebugMessage(2 + HandIndex, 1.0f, FColor::Cyan, FString::Printf(TEXT("Applying (%i) arm spring (%f - %s). ArmSpringForce (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+				HandIndex, ArmSpringAcceleration.Length(), *ArmSpringAcceleration.ToString(), ArmSpringForce.Length(), *ArmSpringForce.ToString(), AccelWithoutArmSpring.Length(), *AccelWithoutArmSpring.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
+		}
 	}
 	
 	// Snapping Root back to a acceptable shoulder distance from the hand.
@@ -531,12 +563,18 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 		// No mass included, so this is used to "snap" the arm back into place once it's fully overstretched, this prevents the arm from going way further than intended
 		HandAcceleration += RootDeltaFixHand * ArmStretchIntensityMultiplier;
 
-		GEngine->AddOnScreenDebugMessage(HandIndex, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying (%i) arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
-			HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
+		M_DEBUG_HAND(HandForces, HandIndex)
+		{
+			GEngine->AddOnScreenDebugMessage(HandIndex, 1.0f, FColor::Blue, FString::Printf(TEXT("Applying (%i) arm stretch (%f - %s). Acc before: (%f - %s) Acc after: (%f - %s)"),
+				HandIndex, RootDeltaFixHand.Length(), *RootDeltaFixHand.ToString(), AccelWithoutArmStretch.Length(), *AccelWithoutArmStretch.ToString(), (ClimbingAcceleration+HandAcceleration).Length(), *(ClimbingAcceleration+HandAcceleration).ToString()));
+		}
 	}
 
-	DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + HandAcceleration * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 1, 0.25f);
-	DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + FVector::VectorPlaneProject(HandAcceleration, HandData.GetHandNormal()) * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 0, 0.5f);
+	M_DEBUG_HAND(HandForces, HandIndex)
+	{
+		DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + HandAcceleration * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 1, 0.25f);
+		DrawDebugDirectionalArrow(GetWorld(), HandData.GetHandLocation(), HandData.GetHandLocation() + FVector::VectorPlaneProject(HandAcceleration, HandData.GetHandNormal()) * 10.0f, 0.f, (HandIndex == 0) ? FColor::Yellow : FColor::Orange, false, 0.02f, 0, 0.5f);
+	}
 
 	// GEngine->AddOnScreenDebugMessage(37, DeltaSeconds, FColor::Green, FString::Printf(TEXT("HandAcceleration (single hand) Before: %f"), HandAcceleration.Length()));
 	// // Should this clamp be separate from Climbing and Horizontal?? (TODO: THIS MIGHT CAUSE A BUG BUG BUG!!!! (All these bugs are tags for me to find in the future in case it really does occur))
@@ -576,7 +614,10 @@ void UClimberCharacterMovementComponent::ComputeHandAccelerations(const int Hand
 	const bool bZeroHandSlipAcceleration = HandSlipAcceleration.IsZero();
 	if (!bZeroHandSlipAcceleration)
 	{
-		GEngine->AddOnScreenDebugMessage(32, DeltaTime, FColor::Green, TEXT("Apply Hand Slip Acceleration"));
+		M_DEBUG_HAND(HandForces, HandIndex)
+		{
+			GEngine->AddOnScreenDebugMessage(32, DeltaTime, FColor::Green, TEXT("Apply Hand Slip Acceleration"));
+		}
 
 		HandMovementData.HandSlipVelocity += HandSlipAcceleration * DeltaTime;
 	}

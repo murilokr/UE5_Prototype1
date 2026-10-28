@@ -3,6 +3,7 @@
 #include "Camera/CameraComponent.h"
 
 #include "Kismet/KismetMathLibrary.h"
+#include "Misc/Debug/MDebugHelper.h"
 
 namespace CameraMathUtils
 {
@@ -143,7 +144,10 @@ void AClimberCameraManager::UpdateViewTargetInternal(FTViewTarget& OutVT, float 
 				// Point camera towards dead body
 				const FVector RagdollDirection = (ClimberCharacter->GetMesh()->GetComponentLocation() - ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation()).GetSafeNormal();
 				const FRotator Ragdoll = FRotationMatrix::MakeFromX(RagdollDirection).Rotator();
-				DrawDebugCoordinateSystem(GetWorld(), ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation(), Ragdoll, 10.0f, false, 0.016f, 0, 1.0f);
+				M_DEBUG(Ragdoll)
+				{
+					DrawDebugCoordinateSystem(GetWorld(), ClimberCharacter->FirstPersonCameraComponent->GetComponentLocation(), Ragdoll, 10.0f, false, 0.016f, 0, 1.0f);
+				}
 				OwningController->SetControlRotation(Ragdoll);
 					
 				// Start changing the FOV
