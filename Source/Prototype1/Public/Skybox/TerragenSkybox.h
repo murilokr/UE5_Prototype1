@@ -5,10 +5,13 @@
 #include "TerragenSkybox.generated.h"
 
 class ADirectionalLight;
+class ASkyLight;
 class UMaterialInstanceDynamic;
 class UMaterialInterface;
+class UMaterialParameterCollection;
 class UStaticMeshComponent;
 class UTerragenWorld;
+class UTextureCube;
 class UTextureRenderTarget2D;
 
 /** How the terrain atlas, the picture the sky sphere shows, is laid out. */
@@ -133,6 +136,36 @@ public:
 	 */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox")
 	TObjectPtr<ADirectionalLight> SunLight;
+
+	/** Optional: a sky light to give the world's background light (a constant cubemap), for meshes using the world's MeshMaterial. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox|Meshes")
+	TObjectPtr<ASkyLight> SkyLight;
+
+	/**
+	 * When the world is set, also give SunLight the world's sun colour, intensity and source angle, and SkyLight its
+	 * background light, so meshes shaded with the world's MeshMaterial are lit as Terragen lights the terrain.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Terragen Skybox|Meshes")
+	bool DriveLights = true;
+
+	/**
+	 * Where the mesh materials and the look post-process read the placement from (MPC_Terragen): TerragenStart, this
+	 * actor's location, CentimetresPerUnit, the headings, the atlas's face size and projection, and SkyRadius.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Meshes")
+	TSoftObjectPtr<UMaterialParameterCollection> ParameterCollection;
+
+	/** A cubemap of constant white for SkyLight (T_TerragenWhiteCube); tinted and scaled to the world's ambient. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox|Meshes")
+	TSoftObjectPtr<UTextureCube> AmbientCubemap;
+
+	/** Writes the placement to ParameterCollection. Happens on its own whenever it can change. */
+	UFUNCTION(BlueprintCallable, Category = "Terragen Skybox|Meshes")
+	void UpdateParameterCollection();
+
+	/** Sets SunLight and SkyLight from the world (see DriveLights). Happens on its own when the world is set. */
+	UFUNCTION(BlueprintCallable, Category = "Terragen Skybox|Meshes")
+	void ApplyLights();
 
 	/** Material that renders the terrain atlas, filling sky from the sky atlas (M_TerragenRender). */
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen Skybox", meta = (EditCondition = "TerragenWorld == nullptr"))

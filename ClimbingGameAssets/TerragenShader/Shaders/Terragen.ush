@@ -413,15 +413,56 @@ struct TGSurface
 	float2 Grad;     // terrain gradient plus bump, in height units per grid step
 };
 
+// The plane the layer tree's gradients live in. The terrain is a heightfield over x, y: the gradient is the
+// height change per grid step and the slope test reads its length (Flat = 1). A mesh face can lean any way,
+// so it picks the axis plane nearest its normal (TerragenMesh.ush): the gradients are then the change along
+// Axis per step along T1 and T2, and the slope is that of the resulting normal (Flat = 0).
+struct TGFrame
+{
+	float3 Axis;     // unit axis the "height" runs along, pointing out of the surface
+	float3 T1;
+	float3 T2;
+	float Flat;      // 1 for the terrain (or an upward face): slope = |gradient|
+};
+
+TGFrame TG_TerrainFrame()
+{
+	TGFrame F;
+	F.Axis = float3(0.0, 0.0, 1.0);
+	F.T1 = float3(1.0, 0.0, 0.0);
+	F.T2 = float3(0.0, 1.0, 0.0);
+	F.Flat = 1.0;
+	return F;
+}
+
+// The normal of a gradient in a frame (the terrain's is normalize(-gx, -gy, 1)).
+float3 TG_FrameNormal(TGFrame F, float2 g)
+{
+	return normalize(F.Axis - F.T1 * g.x - F.T2 * g.y);
+}
+
+// The gradient the coverage slope test sees: as it is on the terrain, otherwise one whose length is tan(slope)
+// of the frame's normal. Faces turned down get the steepest slope, so overhangs take the cliff layers.
+float2 TG_FrameSlopeGrad(TGFrame F, float2 g)
+{
+	if (F.Flat != 0.0)
+	{
+		return g;
+	}
+	float3 n = TG_FrameNormal(F, g);
+	float slope = n.z > 0.0001 ? sqrt(max(1.0 - n.z * n.z, 0.0)) / n.z : 10000.0;
+	return float2(slope, 0.0);
+}
+
 // The surface-layer tree (0x10026370), evaluated without recursion. Each layer adds its own bump octaves
 // to a copy of its parent's per-level gradients, starting at a level chosen from its coverage detail;
 // the result is blended back into the parent by the layer's coverage.
-TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float x, float y, float2 grad0, float footprint)
+// This is the tree for any surface: coverage (noise, altitude and slope) at the point pc with height hj, bump
+// noise at pb in the frame's plane, starting from the gradient grad0. MaxLevels caps the bump levels (the
+// finest detail) below what the footprint asks for; the terrain (TG_SurfaceTree) never caps.
+TGSurface TG_SurfaceLayers(TGWorld W, Texture2D NoiseTex, TGFrame Fr, float2 pc, float hj, float2 pb, float2 grad0, float footprint, int MaxLevels)
 {
-	// Coverage and bump are sampled at a point jittered by up to one footprint, as Terragen does.
-	float2 pj = float2(x + TG_Hash01(x, y, 1u) * footprint, y + TG_Hash01(x, y, 2u) * footprint);
-	float hj = TG_TerrainHeight(HeightTex, W.Terrain, pj.x, pj.y);
-	int levels = clamp(max(4, (int)(log2(1.0 / footprint) + 0.01) + 6), 4, TG_MAX_LEVELS - 1);
+	int levels = clamp(max(4, (int)(log2(1.0 / footprint) + 0.01) + 6), 4, min(MaxLevels, TG_MAX_LEVELS - 1));
 
 	float2 G[TG_MAX_DEPTH][TG_MAX_LEVELS];
 	float3 C[TG_MAX_DEPTH];
@@ -451,10 +492,10 @@ TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, flo
 			int lb = Level[d];
 			if (Ly.BumpAmount != 0.0 && lb - 2 <= levels)
 			{
-				float amp = TG_BumpAmplitude(W, Ly, NoiseTex, pj, footprint);
+				float amp = TG_BumpAmplitude(W, Ly, NoiseTex, pb, footprint);
 				TG_LOOP for (int k = lb - 2; k <= levels; k++)
 				{
-					float2 n = TG_BumpOctave(NoiseTex, Ly, pj, k, amp);
+					float2 n = TG_BumpOctave(NoiseTex, Ly, pb, k, amp);
 					float2 prev = G[d][max(k - 1, 0)];
 					if (k == lb - 2)      { G[d][k] = G[d][k] * 0.8 + (n + prev) * 0.2; }
 					else if (k == lb - 1) { G[d][k] = G[d][k] * 0.4 + (n + prev) * 0.6; }
@@ -485,9 +526,9 @@ TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, flo
 			// First pass at a coarse footprint picks which gradient level the slope test sees.
 			float coarse = min(max(footprint, Cl.SmallestSize), 1.0);
 			int lvl = clamp((int)log2(1.1 / coarse) + 4, 4, levels);
-			float2 c1 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pj, hj, G[d][lvl], coarse);
+			float2 c1 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pc, hj, TG_FrameSlopeGrad(Fr, G[d][lvl]), coarse);
 			int lvl2 = c1.y <= 0.0 ? levels : clamp((int)log2(1.1 / c1.y) + 4, 4, levels);
-			float2 c2 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pj, hj, G[d][lvl2], footprint);
+			float2 c2 = TG_Coverage(Cl, NoiseTex, W.Terrain.CellsLog2, pc, hj, TG_FrameSlopeGrad(Fr, G[d][lvl2]), footprint);
 			int childLevel = c2.y <= 0.0 ? levels + 4 : clamp((int)log2(1.1 / c2.y) + 4, 4, levels + 4);
 
 			TG_LOOP for (int k1 = 0; k1 <= levels; k1++)
@@ -522,6 +563,15 @@ TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, flo
 	S.Colour = C[0];
 	S.Grad = G[0][levels];
 	return S;
+}
+
+// The terrain's surface at grid point (x, y). Coverage and bump are sampled at a point jittered by up to one
+// footprint, as Terragen does.
+TGSurface TG_SurfaceTree(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, float x, float y, float2 grad0, float footprint)
+{
+	float2 pj = float2(x + TG_Hash01(x, y, 1u) * footprint, y + TG_Hash01(x, y, 2u) * footprint);
+	float hj = TG_TerrainHeight(HeightTex, W.Terrain, pj.x, pj.y);
+	return TG_SurfaceLayers(W, NoiseTex, TG_TerrainFrame(), pj, hj, pj, grad0, footprint, TG_MAX_LEVELS - 1);
 }
 
 // ---------------------------------------------------------------- light and shadow

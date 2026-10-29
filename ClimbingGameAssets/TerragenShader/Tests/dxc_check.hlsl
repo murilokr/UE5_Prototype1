@@ -22,7 +22,69 @@ Texture2D Atlas : register(t2);
 Texture2D CloudTex : register(t3);
 SamplerState AtlasSampler : register(s0);
 
-#if LEGACY_MATERIAL == 4
+#if LEGACY_MATERIAL == 5
+
+// The mesh materials of Tools/ue_mesh_setup.py, their Custom nodes' calls: RENDER_ATLAS=0 M_TerragenMesh (lit),
+// 1 M_TerragenMeshUnlit, 2 PP_TerragenLook (the per-sample maths and the atlas snap; the screen lookups around
+// them are Unreal's), 3 M_TerragenMeshProbe, 4 M_TerragenMeshCheck, 5 M_TerragenSunLight (light function).
+#include "TerragenMesh.ush"
+
+cbuffer Params : register(b0)
+{
+	float3 OffsetCm;
+	float CentimetresPerUnit;
+	float3 CameraOffsetCm;
+	float HeadingAtPlusX;
+	float3 NormalUE;
+	float FaceSize;
+	float3 TerragenStart;
+	float Projection;
+	float3 DirUE;
+	float DetailScale;
+	float3 ViewForward;
+	float MaxLevels;
+	float4 Linear;
+	float SceneDepth;
+	float SkyRadius;
+	float Segments;
+	float TerrainShadows;
+	float Standalone;
+	float AtlasHeading;
+	float Index;
+};
+
+#if SKY_WORLD
+#define TG_CHECK_CLOUDS CloudTex
+#else
+#define TG_CHECK_CLOUDS NoiseTex
+#endif
+
+float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
+{
+#if RENDER_ATLAS == 0
+	TGMeshSurface S = TG_MeshMaterialSurface(TG_CHECK_WORLD(), NoiseTex, OffsetCm, CameraOffsetCm, NormalUE, TerragenStart, CentimetresPerUnit, HeadingAtPlusX, FaceSize, Projection, DetailScale, MaxLevels);
+	return float4(S.Colour + S.Normal, 1.0);
+#elif RENDER_ATLAS == 1
+	return float4(TG_MeshMaterialUnlit(TG_CHECK_WORLD(), HeightTex, NoiseTex, TG_CHECK_CLOUDS, OffsetCm, CameraOffsetCm, NormalUE, TerragenStart, CentimetresPerUnit, HeadingAtPlusX, FaceSize, Projection, DetailScale, MaxLevels, TerrainShadows, Standalone, Segments), 1.0);
+#elif RENDER_ATLAS == 2
+	TGAtlasSnap Sn = TG_AtlasSnap(TG_FromUEDirection(DirUE, HeadingAtPlusX), AtlasHeading, FaceSize, Projection);
+	float3 c00 = TG_LookSample(TG_CHECK_WORLD(), TG_CHECK_CLOUDS, Linear.xyz, SceneDepth, TG_ToUEDirection(Sn.D00, HeadingAtPlusX), ViewForward, CameraOffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX, SkyRadius, Segments);
+	float3 c11 = TG_LookSample(TG_CHECK_WORLD(), TG_CHECK_CLOUDS, Linear.xyz, SceneDepth, TG_ToUEDirection(Sn.D11, HeadingAtPlusX), ViewForward, CameraOffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX, SkyRadius, Segments);
+	// PP_TerragenSoften's jitter and prefilter taps (its screen reads are Unreal's).
+	float4 ax = TG_SnapScreenAxes(uv, uv + DirUE.xy, uv + DirUE.yz, uv + DirUE.xz);
+	float2 tap = TG_SnapTap(uv, ax, TG_TexelJitter(Sn.T0, Sn.Size, Segments), DetailScale, (int)Index);
+	return float4(TG_SnapBlend(Sn, c00, c00, c11, c11) + float3(tap, 0.0), 1.0);
+#elif RENDER_ATLAS == 3
+	return TG_MeshLightProbe(TG_CHECK_WORLD(), TG_CHECK_CLOUDS, TerragenStart, Index);
+#elif RENDER_ATLAS == 5
+	float f = TG_MeshMaterialCloudLight(TG_CHECK_WORLD(), TG_CHECK_CLOUDS, OffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX);
+	return float4(f, f, f, 1.0);
+#else
+	return float4(TG_MeshCheckTexel(TG_CHECK_WORLD(), HeightTex, NoiseTex, TG_CHECK_CLOUDS, floor(uv * 32.0), TerragenStart, Index), 1.0);
+#endif
+}
+
+#elif LEGACY_MATERIAL == 4
 
 // The current materials: M_TerragenRender with the Projection input (RENDER_ATLAS=1) and M_TerragenSkyDisplay's
 // lookup for either projection (RENDER_ATLAS=0). The sky material is unchanged since LEGACY_MATERIAL=3.

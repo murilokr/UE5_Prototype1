@@ -58,4 +58,37 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Sun", meta = (ClampMin = "-90.0", ClampMax = "90.0"))
 	float SunAltitude = 45.f;
+
+	/** Angular diameter of the sun disc in degrees; the skybox gives SunLight this source angle, for Terragen-like soft shadows. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Sun", meta = (ClampMin = "0.0"))
+	float SunDiameter = 1.f;
+
+	/**
+	 * The world's sunlight at TerragenStart, linear, in Terragen's units (1 = white): the sun colour through the
+	 * atmosphere (TG_MeshLightProbe in TerragenMesh.ush, measured by Tools/ue_mesh_setup.py). The skybox gives
+	 * SunLight pi times this, so Unreal's Lambert shading of a mesh matches Terragen's light. Black = leave the
+	 * light alone.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Light")
+	FLinearColor SunColour = FLinearColor::Black;
+
+	/** Light function for SunLight: the clouds' shadow (or uniform dimming) at each lit point (M_TerragenSunLight_<Name>). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Light")
+	TSoftObjectPtr<UMaterialInterface> SunLightFunction;
+
+	/** The world's background light as one linear colour; the skybox gives SkyLight a constant cubemap of it. Black = leave the sky light alone. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Light")
+	FLinearColor AmbientColour = FLinearColor::Black;
+
+	/** Lit material that shades any mesh with this world's surface layers (M_TerragenMesh_<Name>). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Meshes")
+	TSoftObjectPtr<UMaterialInterface> MeshMaterial;
+
+	/** Unlit variant with Terragen's own light, no mesh shadows (M_TerragenMeshUnlit_<Name>). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Meshes")
+	TSoftObjectPtr<UMaterialInterface> MeshUnlitMaterial;
+
+	/** Post-process that replaces the tonemapper with the world's atmosphere, tone curve and atlas resolution (PP_TerragenLook_<Name>). */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Terragen World|Meshes")
+	TSoftObjectPtr<UMaterialInterface> LookMaterial;
 };

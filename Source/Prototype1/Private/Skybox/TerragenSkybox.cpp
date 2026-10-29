@@ -1,15 +1,21 @@
 #include "Skybox/TerragenSkybox.h"
 
 #include "Camera/PlayerCameraManager.h"
+#include "Components/DirectionalLightComponent.h"
+#include "Components/SkyLightComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/Canvas.h"
 #include "Engine/DirectionalLight.h"
+#include "Engine/SkyLight.h"
+#include "Engine/TextureCube.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/TextureRenderTarget2D.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetRenderingLibrary.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialParameterCollection.h"
+#include "Materials/MaterialParameterCollectionInstance.h"
 #include "Skybox/TerragenWorld.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -45,6 +51,19 @@ namespace TerragenSkyboxAtlas
 	const FName NoiseTex(TEXT("NoiseTex"));
 	const FName CloudTex(TEXT("CloudTex"));   // only on sky-world render materials
 	const FName TerrainClearance(TEXT("TerrainClearance"));
+
+	// MPC_Terragen, read by the mesh materials and the look post-process (Tools/ue_mesh_setup.py).
+	namespace Collection
+	{
+		const FName TerragenStart(TEXT("TerragenStart"));
+		const FName ActorLocation(TEXT("ActorLocation"));
+		const FName CentimetresPerUnit(TEXT("CentimetresPerUnit"));
+		const FName HeadingAtPlusX(TEXT("HeadingAtPlusX"));
+		const FName AtlasHeading(TEXT("AtlasHeading"));
+		const FName FaceSize(TEXT("FaceSize"));
+		const FName Projection(TEXT("Projection"));
+		const FName SkyRadius(TEXT("SkyRadius"));
+	}
 
 	// TG_CameraRay (Terragen.ush): heading from +y towards +x, pitch up positive, pixel row 0 at the top.
 	FVector CameraRay(double HeadingDeg, double PitchDeg, double PixelX, double PixelY, double Size)
@@ -87,6 +106,8 @@ ATerragenSkybox::ATerragenSkybox()
 	RenderMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/MyStuff/Skybox/Terragen/M_TerragenRender.M_TerragenRender")));
 	SkyRenderMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/MyStuff/Skybox/Terragen/M_TerragenRenderSky.M_TerragenRenderSky")));
 	DisplayMaterial = TSoftObjectPtr<UMaterialInterface>(FSoftObjectPath(TEXT("/Game/MyStuff/Skybox/Terragen/M_TerragenSkyDisplay.M_TerragenSkyDisplay")));
+	ParameterCollection = TSoftObjectPtr<UMaterialParameterCollection>(FSoftObjectPath(TEXT("/Game/MyStuff/Skybox/Terragen/MPC_Terragen.MPC_Terragen")));
+	AmbientCubemap = TSoftObjectPtr<UTextureCube>(FSoftObjectPath(TEXT("/Game/MyStuff/Skybox/Terragen/Textures/T_TerragenWhiteCube.T_TerragenWhiteCube")));
 
 	// The root stays where the actor is placed (the Terragen origin); only the sphere follows the camera.
 	RootComponent = CreateDefaultSubobject<USceneComponent>(TEXT("Root"));
@@ -115,6 +136,7 @@ void ATerragenSkybox::OnConstruction(const FTransform& Transform)
 	{
 		SkyMesh->SetMaterial(0, DisplayMID ? DisplayMID.Get() : Display);
 	}
+	UpdateParameterCollection();
 }
 
 void ATerragenSkybox::PostLoad()
@@ -129,13 +151,15 @@ void ATerragenSkybox::BeginPlay()
 	Super::BeginPlay();
 	ApplyWorld(true);
 	EnsureMaterials();
+	UpdateParameterCollection();
 }
 
 #if WITH_EDITOR
 void ATerragenSkybox::PostEditChangeProperty(FPropertyChangedEvent& Event)
 {
 	const FName Name = Event.GetMemberPropertyName();
-	if (Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TerragenWorld) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SunLight))
+	if (Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, TerragenWorld) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SunLight) ||
+	    Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, SkyLight) || Name == GET_MEMBER_NAME_CHECKED(ATerragenSkybox, DriveLights))
 	{
 		ApplyWorld(true);
 		ResetDrawing();
@@ -186,6 +210,88 @@ void ATerragenSkybox::ApplyWorld(bool TurnSunLight)
 		// A Terragen heading H is Unreal yaw H - HeadingAtPlusX; the light points away from the sun.
 		SunLight->SetActorRotation(FRotator(-TerragenWorld->SunAltitude, FRotator::NormalizeAxis(TerragenWorld->SunHeading - HeadingAtPlusX - 180.f), 0.f));
 	}
+	if (TurnSunLight && DriveLights)
+	{
+		ApplyLights();
+	}
+	UpdateParameterCollection();
+}
+
+void ATerragenSkybox::ApplyLights()
+{
+	if (!TerragenWorld)
+	{
+		return;
+	}
+	// Unreal's Lambert term is albedo / pi times the irradiance, Terragen's is albedo times the light colour: a
+	// directional light of pi times the sun colour (in lux, unexposed, as the look post-process reads the scene)
+	// matches it; the light function adds the clouds per pixel. A sky light's constant cubemap of radiance L gives
+	// albedo times L, Terragen's ambient term.
+	const FLinearColor Sun = TerragenWorld->SunColour;
+	const float SunPeak = Sun.GetMax();
+	if (SunLight && SunPeak > 0.f)
+	{
+		if (ULightComponent* Light = SunLight->GetLightComponent())
+		{
+			Light->Modify();
+			Light->Intensity = UE_PI * SunPeak;
+			Light->LightColor = (Sun / SunPeak).ToFColor(true);
+			if (UDirectionalLightComponent* Directional = Cast<UDirectionalLightComponent>(Light))
+			{
+				Directional->LightSourceAngle = TerragenWorld->SunDiameter;
+			}
+			// The clouds' shadow moves over the level as it does over the terrain.
+			if (UMaterialInterface* Function = TerragenWorld->SunLightFunction.LoadSynchronous())
+			{
+				Light->LightFunctionMaterial = Function;
+			}
+			Light->MarkRenderStateDirty();
+		}
+	}
+	const FLinearColor Ambient = TerragenWorld->AmbientColour;
+	const float AmbientPeak = Ambient.GetMax();
+	UTextureCube* Cubemap = AmbientCubemap.LoadSynchronous();
+	if (SkyLight && AmbientPeak > 0.f && Cubemap)
+	{
+		if (USkyLightComponent* Light = SkyLight->GetLightComponent())
+		{
+			Light->Modify();
+			Light->SourceType = SLS_SpecifiedCubemap;
+			Light->Cubemap = Cubemap;
+			Light->bLowerHemisphereIsBlack = false;
+			// Terragen has no ambient occlusion: no distance-field shadowing of the sky light.
+			Light->CastShadows = false;
+			Light->Intensity = AmbientPeak;
+			Light->LightColor = (Ambient / AmbientPeak).ToFColor(true);
+			Light->MarkRenderStateDirty();
+			Light->RecaptureSky();
+		}
+	}
+}
+
+void ATerragenSkybox::UpdateParameterCollection()
+{
+	UWorld* World = GetWorld();
+	UMaterialParameterCollection* Collection = ParameterCollection.LoadSynchronous();
+	if (!World || !Collection)
+	{
+		return;
+	}
+	UMaterialParameterCollectionInstance* Instance = World->GetParameterCollectionInstance(Collection);
+	if (!Instance)
+	{
+		return;
+	}
+	namespace C = TerragenSkyboxAtlas::Collection;
+	const FVector Location = GetActorLocation();
+	Instance->SetVectorParameterValue(C::TerragenStart, FLinearColor(TerragenStart.X, TerragenStart.Y, TerragenStart.Z, 0.f));
+	Instance->SetVectorParameterValue(C::ActorLocation, FLinearColor(Location.X, Location.Y, Location.Z, 0.f));
+	Instance->SetScalarParameterValue(C::CentimetresPerUnit, CentimetresPerUnit);
+	Instance->SetScalarParameterValue(C::HeadingAtPlusX, HeadingAtPlusX);
+	Instance->SetScalarParameterValue(C::AtlasHeading, AtlasHeading);
+	Instance->SetScalarParameterValue(C::FaceSize, TerrainAtlasSize / 4.f);
+	Instance->SetScalarParameterValue(C::Projection, Projection == ETerragenProjection::Sphere ? 1.f : 0.f);
+	Instance->SetScalarParameterValue(C::SkyRadius, SkyRadius);
 }
 
 void ATerragenSkybox::ResetDrawing()
@@ -214,6 +320,7 @@ void ATerragenSkybox::Tick(float DeltaSeconds)
 	}
 	const FVector Eye = Camera->GetCameraLocation();
 	SkyMesh->SetWorldLocation(Eye);
+	UpdateParameterCollection();
 	if (!MaterialsReady())
 	{
 		// Drawing now would fill tiles with the fallback material and mark them as done.

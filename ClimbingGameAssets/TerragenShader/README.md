@@ -19,6 +19,7 @@ The same `.ush` also compiles as C++ (`Tests/hlsl_shim.h`), so `Tests/tg_render`
 |---|---|
 | `Shaders/Terragen.ush` | The renderer. Main entry points: `TG_RenderRay`, `TG_ShadeRay`, `TG_CameraRay`. |
 | `Shaders/TerragenUE.ush` | Unreal glue: the skybox cross atlas (same layout as `Scripts/GenerateSkyboxTexture.py`), UE↔Terragen directions, sRGB decode. |
+| `Shaders/TerragenMesh.ush` | Terragen's shading on ordinary meshes and the look post-process's maths; see [Meshes with the Terragen look](#meshes-with-the-terragen-look). |
 | `Shaders/TerragenPerlin.ush` | Terragen's Perlin tables (`srand(0)` permutation and gradients), for the cloud and wave noise. |
 | `Shaders/Worlds/MountainTop.ush` | Generated from `DynamicPrototype2/WorldNewLocationAndAtmosphere.tgw`: sun, light, water, tone settings and the 5 surface layers. Sky off. |
 | `Shaders/Worlds/Prototype2World.ush` | Generated from `DynamicPrototype2/Prototype2World.tgw`, with the sun and cloud shadows of the `Output/` reference render (see below). Sky, clouds, atmosphere and water on. |
@@ -36,6 +37,8 @@ The same `.ush` also compiles as C++ (`Tests/hlsl_shim.h`), so `Tests/tg_render`
 | `Tools/compare.py` | Side-by-side images and metrics against Terragen; `--calibrate` fits light scales. |
 | `Tools/ue_setup.py` | Run inside the editor: creates the Unreal assets and test map, renders on the GPU and exports the atlas. |
 | `Tools/ue_view_check.py` | Run inside the editor: six screenshots of the sky from the level viewport, plus a quiet-GPU redraw timing. Takes `TG_WORLD` like `ue_setup.py`; `TG_CULLTEST=1` draws only the tiles the culling picks before each shot. |
+| `Tools/ue_mesh_setup.py` | Run inside the editor after `ue_setup.py`: creates the mesh materials, the look post-process and a test map, and checks them on the GPU. |
+| `Tests/tg_mesh_test.cpp` | Checks `TerragenMesh.ush` against the terrain renderer on the CPU, and the GPU read-back against the CPU. |
 | `Tools/ue_profile.py` | Run inside the editor: times each pass with one feature switched off at a time, to see where the GPU time goes. |
 | `Tests/build.cmd` | Builds `Build/tg_render.exe` (MountainTop) and `Build/tg_render_Prototype2World.exe` with MSVC, and checks the shaders compile with DXC (SM6.6) and FXC (SM5): the sky lookup, the atlas for both worlds, and the exact Custom-node calls of the existing Unreal materials. |
 
@@ -271,9 +274,81 @@ Shader cost: the CPU harness renders the full 2048² atlas in 2.0 s for Mountain
 
 - **Post-processing.** The sky material decodes the atlas as sRGB, so its emissive equals what the old sRGB skybox textures gave. UE's tonemapper, bloom and temporal AA still run on top, as they did for the old textures, so the screen isn't byte-identical to Terragen. Two optional tweaks:
   - Nearest filtering on `RT_TerragenSky` keeps the texels crisp.
-  - A post-process material in front of the tonemapper would be needed to show Terragen's exact bytes.
+  - `PP_TerragenLook_<World>` replaces the tonemapper and shows the sky as the atlas's bytes; see [Meshes with the Terragen look](#meshes-with-the-terragen-look).
 - **Async builds in the editor.** Right after loading, the height texture is still building. The actor waits for its textures and shaders before drawing, because the placeholder texture would render the whole sky as snow.
 - **Game target.** `Prototype1.Build.cs` now adds `UnrealEd` only for editor builds (`if (Target.bBuildEditor)`), which the game target needs; with it, the game target built cleanly.
+
+## Meshes with the Terragen look
+
+`Shaders/TerragenMesh.ush` shades ordinary level geometry the way the terrain is shaded, so props and level meshes match the picture behind them. Everything Terragen does after finding the visible point needs only a position and a normal, so it carries over:
+
+| Terragen part | On a mesh |
+|---|---|
+| Surface-layer tree (snow, grass, rock: noise, altitude, slope) | `TG_MeshSurface`: altitude is the mesh point's own Terragen z, slope comes from its normal. Coverage noise reads the same world x, y as the terrain, so patches line up with the terrain behind. |
+| Bump | Projected on the axis plane nearest the normal, blended across the 45° boundaries (up to three planes near a cube-corner direction). For upward faces up to about 38° this is exactly the terrain's own x, y plane. |
+| Level of detail | The footprint uses the terrain atlas's pixel angle (2 / face size), not the screen's, so meshes stop at the same detail as the picture. |
+| Sun, soft shadow, ambient | Lit material: Unreal's Lambert diffuse with lights set to Terragen's values (below), with Unreal's own shadows. Unlit material: Terragen's light equation exactly, no mesh shadows. |
+| Cloud shadows | The directional light's light function (`M_TerragenSunLight_<World>`) evaluates the clouds' share of the sun at each lit point, so cloud shadows move over meshes as over the terrain. |
+| Atmosphere and tone curve | `PP_TerragenLook_<World>`, a post-process that replaces the tonemapper: Terragen's atmosphere march from the camera to each pixel's depth, then the world's exposure and tone curve. The sky sphere's pixels pass through as the atlas's own bytes. |
+| The soft, low-res look | The same post-process samples the screen at the four terrain-atlas texel centres around each pixel's direction and blends them bilinearly, as the sky sphere does. Meshes then sit on exactly the atlas's texel grid. `Softness` 0 keeps screen resolution. |
+
+### Using it
+
+1. Run `Tools/ue_setup.py` for the world (if not done), then `Tools/ue_mesh_setup.py` with the same command line and `TG_WORLD=<Name>`. It makes the assets below, fills in `DA_TerragenWorld_<Name>`, checks everything on the GPU and builds a `TerragenMeshTest_<Name>` map.
+2. Put `M_TerragenMesh_<Name>` on any mesh. It needs no UVs or textures. Its parameters are `Tint`, `DetailScale` (2 = half the detail, cheaper) and `MaxLevels` (caps the finest bump level; 23 = Terragen's own).
+3. On the `ATerragenSkybox`, set `SunLight` and `SkyLight` (both Movable). With `DriveLights` on (the default), setting the world gives the sun π × the world's sun colour, its light function and the sun's angular size. The sky light gets a constant cubemap (`T_TerragenWhiteCube`) tinted to the world's ambient, with no lower-hemisphere black and no distance-field shadowing.
+4. Add an unbound post-process volume with `PP_TerragenLook_<Name>` as a blendable. Turn global illumination, reflections and ambient occlusion off in it: Terragen has none, and the light values assume none. The test maps show the settings.
+
+The actor writes its placement to `MPC_Terragen` (start, its own location, cm per unit, headings, atlas face size and projection, sky radius), which all the mesh materials read. One skybox per level.
+
+| Asset | What |
+|---|---|
+| `M_TerragenMesh_<World>` | Lit: BaseColor and a world-space Normal from the layer tree; specular 0, roughness 1. |
+| `M_TerragenMeshUnlit_<World>` | Terragen's own light, linear, for the look. `Standalone` = 1 adds the atmosphere and tone curve itself, for scenes without the look. `TerrainShadows` = 1 adds the Terragen terrain's shadow (only right where the level lines up with the Terragen ground). |
+| `M_TerragenSunLight_<World>` | The sun's light function: cloud shadow, or the uniform cloud dimming in worlds without cloud shadows. |
+| `PP_TerragenLook_<World>`, `MI_TerragenLookSharp_<World>` | The look; the instance has `Softness` 0. `Segments` caps the atmosphere march's steps (24 reaches the 10 km sky sphere in both worlds without capping). |
+| `PP_TerragenSoften` | Only the softness, after Unreal's tonemapper: everything but the sky sphere goes on the atlas's texel grid. The sky's pixels are left exactly as Unreal draws them, and Unreal's tonemapper, bloom and grading stay. It has no world compiled in, so one asset serves every world. Use it instead of `PP_TerragenLook_<World>` when you want the softness without Terragen's tone curve and haze. Parameters: `Softness`; `Prefilter` (1 = each texel is the average of its footprint on screen, from four bilinear reads; 0 = one point); `Jitter` (how far inside its texel each texel is read, 1 = anywhere, as Terragen jitters its shading points; the offset is fixed per texel, so it doesn't flicker). |
+| `MI_TerragenSoftenPlain`, `MI_TerragenSoftenNoJitter` | `PP_TerragenSoften` without prefilter and jitter, and without jitter, for comparison. |
+| `MPC_Terragen`, `Textures/T_TerragenWhiteCube` | Shared by all worlds. |
+| `M_TerragenMeshProbe_<World>`, `M_TerragenMeshCheck_<World>` | Measurement only (the setup script's light probe and GPU check). |
+
+### Why the light values work
+
+Unreal's Lambert term is albedo / π × irradiance, Terragen's is albedo × light colour. So a directional light of π × the sun colour (lux) gives Terragen's sun term. A sky light whose cubemap has a constant radiance L gives albedo × L, which is Terragen's single-colour ambient. The look reads the scene colour without Unreal's pre-exposure, so Unreal's exposure settings don't matter.
+
+The light colour is the sun through the atmosphere at `TerragenStart`, measured on the GPU (`TG_MeshLightProbe`); its change with altitude over a level is ignored. The clouds come per pixel from the light function. Multi-directional ambient is averaged to one constant (exact for both worlds, which use a single colour).
+
+### Verified
+
+`Tests/build.cmd` also builds `Build/tg_mesh_test[_Prototype2World].exe`. Run it with the height and noise files (and `--clouds` for sky worlds); it prints PASS/FAIL per check. With `--gpu Out/ue/[<World>/]mesh/mesh_gpu.txt` it compares the setup script's GPU read-back with the CPU instead.
+
+| Check | Result (MountainTop / Prototype2World) |
+|---|---|
+| Terrain renderer after splitting the layer tree for meshes (`TG_SurfaceLayers`) | All six faces bit-identical to before, `.bmp` and float `.aux`, both worlds |
+| A mesh face lying on the terrain vs the terrain there, 3000 random points and footprints | Albedo mean 0.009, p99 0.11 levels. Lit colour for faces up to 38°: mean 0.018 / 0.009, p99 0.07 / 0.06 display levels. Steeper faces blend in a side plane's bump, a different pattern by design: median about 15 display levels from the terrain's. |
+| Bump-plane blend | Continuous: a turn 100× smaller across a plane boundary changes the colour about 270× less |
+| Atmosphere in the look vs `TG_Atmosphere` | Identical whenever the march fits in `Segments` steps (Prototype2World's step is 32 units, 480 m). Capping it does cost: with 2–8 steps, longer segments are off by 10–16 levels on average. Hence the default of 24. |
+| Light colour × light function vs Terragen's sunlight at a point | Identical (500 points) |
+| Mapping | Positions match `ATerragenSkybox::ToTerragen` to 5e-4 units; direction and sRGB round trips exact |
+| Atlas snapping (cube and sphere map) | Corners are texel centres inside the direction's face; the weights reproduce its atlas position to 5e-4 texels |
+| GPU vs CPU (`TG_MeshCheckTexel`, 1024 texels per mode, and the light probe) | Albedo ≤ 0.12 levels, normals ≤ 0.07°, unlit colour ≤ 0.07, look colour ≤ 0.12 display levels; probe within 0.07% (half floats) |
+| Sky through the look vs the atlas's bytes (`mesh/sky_check.txt`, 90° 512² viewport shots) | Median 2 / 3 levels (mean 4.1 / 6.1); through Unreal's tonemapper, median 15 / 19. About 1% of texels are off by more (p99 56 / 60); not traced yet, TAA on high-contrast edges being the likely cause. |
+| `PP_TerragenSoften` leaves the sky alone (`mesh/sky_check.txt`, every pixel of the 512² shot) | It differs from Unreal's own sky exactly as much as two shots through Unreal's tonemapper differ from each other: mean 0.22 / 0.33 levels, p99 1, for both comparisons (temporal AA) |
+| `PP_TerragenSoften`'s jitter and prefilter, on the CPU | The jitter belongs to the corners' texels (40 000 corners), is uniform within ±half a texel and the same across the sphere map's seam; the four taps centre on the jittered point and span half a texel |
+| Steadiness of `PP_TerragenSoften` when the close view turns 0.1° (`mesh/stability.txt`; under half a texel, so the meshes slide under the fixed grid) | Pixels changing by more than 16 levels, MountainTop / Prototype2World: without prefilter or jitter 10.2% / 3.4%, prefilter only 8.3% / 3.1%, both (the default) 8.6% / 3.2%. Mean change 5.9 → 5.3 and 2.9 → 2.7 levels. The jitter gives back a little of the prefilter's gain: it is deliberate per-texel variation. |
+| Cost per full 1080p screen of mesh pixels (`mesh/timing.txt`) | Lit material about 12.6 / 13.1 ms, unlit 14.3 / 13.8 ms. The look's maths alone 0.7 / 7.2 ms (the atmosphere is the difference; screen reads not included). |
+
+The screenshots in `Out/ue/[<World>/]mesh/` show the test maps through the look (`view_meshes_look`, `view_meshes_close_look`), at screen resolution (`view_meshes_sharp`), through Unreal's tonemapper (`view_meshes_ue_tonemapper`) and with only the softness (`view_meshes_soften`, `view_meshes_close_soften`, and `view_meshes_close_soften_plain` / `_nojitter` without prefilter and jitter). Prototype2World's start is in a cloud shadow, so the script also puts the shapes in the nearest sunlit spot that is above the Terragen ground (`view_sunlit_*`).
+
+### Things to know
+
+- **Cost.** The layer tree is the terrain pass's own, per pixel, at about 13 ms for a whole 1080p screen. Meshes covering a third of the screen cost a third of that. `DetailScale` and `MaxLevels` trade detail for speed. Baking the material into textures for static props is the cheap alternative.
+- **The look replaces the tonemapper for everything** in its volume, Terragen materials or not. Bloom, Unreal's tone curve and colour grading are gone; UI is unaffected.
+- **Sky detection.** The look treats pixels at 98% of `SkyRadius` or more as sky. In the editor without play the sphere stays on the actor, not the camera, so far from the actor some sky pixels can fall short of that and get toned twice.
+- **Mesh textures and normal maps** are not used: the surface comes from the world's layers. `Tint` is the only per-mesh control so far.
+- **Steep faces** take their bump from a side plane, so a cliff mesh doesn't continue the terrain's exact bump pattern (its colours do continue).
+- **The sky at a lifted camera.** Where the Terragen ground is above the level, `KeepAboveTerrain` lifts the Terragen camera onto it. At one such spot in Prototype2World the sky came out black in both the CPU harness and the GPU (they agree to 0.8 levels), so it is the renderer's own behaviour there.
+- **Editor exit.** In 2 of 11 runs, the offscreen editor exited with 0xC0000409 after its log had closed, with everything already saved and no crash report. Not traced.
 
 ## Future work: authoring worlds in the editor
 

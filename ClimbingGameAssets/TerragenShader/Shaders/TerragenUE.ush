@@ -203,12 +203,30 @@ float3 TG_FromUEDirection(float3 UE, float HeadingAtPlusX)
 	return float3(x * cos(h) + y * sin(h), -x * sin(h) + y * cos(h), UE.z);
 }
 
+// The inverse of TG_FromUEDirection.
+float3 TG_ToUEDirection(float3 T, float HeadingAtPlusX)
+{
+	float h = HeadingAtPlusX * TG_DEG;
+	float x = T.x * cos(h) - T.y * sin(h);
+	float y = T.x * sin(h) + T.y * cos(h);
+	return float3(y, x, T.z);
+}
+
 // The atlas stores display values; decoding them as sRGB gives what sampling the old sRGB skybox textures did.
 float3 TG_SRGBToLinear(float3 c)
 {
 	float r = c.x <= 0.04045 ? c.x / 12.92 : pow(abs((c.x + 0.055) / 1.055), 2.4);
 	float g = c.y <= 0.04045 ? c.y / 12.92 : pow(abs((c.y + 0.055) / 1.055), 2.4);
 	float b = c.z <= 0.04045 ? c.z / 12.92 : pow(abs((c.z + 0.055) / 1.055), 2.4);
+	return float3(r, g, b);
+}
+
+// The inverse of TG_SRGBToLinear: back to the display values the atlas holds.
+float3 TG_LinearToSRGB(float3 c)
+{
+	float r = c.x <= 0.0031308 ? c.x * 12.92 : 1.055 * pow(abs(c.x), 1.0 / 2.4) - 0.055;
+	float g = c.y <= 0.0031308 ? c.y * 12.92 : 1.055 * pow(abs(c.y), 1.0 / 2.4) - 0.055;
+	float b = c.z <= 0.0031308 ? c.z * 12.92 : 1.055 * pow(abs(c.z), 1.0 / 2.4) - 0.055;
 	return float3(r, g, b);
 }
 

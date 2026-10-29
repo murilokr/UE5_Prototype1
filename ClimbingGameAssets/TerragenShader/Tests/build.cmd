@@ -16,6 +16,9 @@ set CLFLAGS=/nologo /O2 /fp:precise /EHsc /std:c++17 /W3 /wd4305 /wd4244 /D_CRT_
 cl %CLFLAGS% "%HERE%tg_render.cpp" /Fo"%ROOT%\Build\\" /Fe"%ROOT%\Build\tg_render.exe" || exit /b 1
 rem The sky reference world (Prototype2World) gets its own build; the world is a compile-time choice.
 cl %CLFLAGS% /DTG_WORLD_FILE=\"Worlds/Prototype2World.ush\" /DTG_WORLD_FN=TGWorld_Prototype2World /DTG_WORLD_CAMERA=TGWorld_Prototype2World_CameraPos /DTG_WORLD_HEADING=TGWorld_Prototype2World_CameraHeading "%HERE%tg_render.cpp" /Fo"%ROOT%\Build\\" /Fe"%ROOT%\Build\tg_render_Prototype2World.exe" || exit /b 1
+rem The mesh shading and look post-process checks (Shaders/TerragenMesh.ush), for both worlds.
+cl %CLFLAGS% "%HERE%tg_mesh_test.cpp" /Fo"%ROOT%\Build\\" /Fe"%ROOT%\Build\tg_mesh_test.exe" || exit /b 1
+cl %CLFLAGS% /DTG_WORLD_FILE=\"Worlds/Prototype2World.ush\" /DTG_WORLD_FN=TGWorld_Prototype2World /DTG_WORLD_CAMERA=TGWorld_Prototype2World_CameraPos "%HERE%tg_mesh_test.cpp" /Fo"%ROOT%\Build\\" /Fe"%ROOT%\Build\tg_mesh_test_Prototype2World.exe" || exit /b 1
 
 rem The project targets D3D12 SM6 (DXC) and D3D11 SM5 (FXC), so check both compilers.
 where dxc >nul 2>nul || (echo dxc not on PATH, skipping the HLSL checks & exit /b 0)
@@ -24,7 +27,8 @@ rem Prototype2World (sky on); then the exact Custom-node calls of the first Unre
 rem and of the first split ones (LEGACY_MATERIAL=2: terrain pass, then sky pass, for both worlds), and the current
 rem ones with the reflection-sky atlas (LEGACY_MATERIAL=3), and the current ones with the Projection input
 rem (LEGACY_MATERIAL=4: terrain pass, then the display lookup).
-for %%v in ("0 0 0" "1 0 0" "1 1 0" "0 0 1" "1 0 1" "1 0 2" "1 1 2" "2 0 2" "2 1 2" "1 0 3" "1 1 3" "2 0 3" "2 1 3" "1 0 4" "1 1 4" "0 0 4") do for /f "tokens=1,2,3" %%a in (%%v) do (
+rem LEGACY_MATERIAL=5 is the mesh materials (RENDER_ATLAS 0 lit, 1 unlit, 2 look post-process, 3 light probe, 4 GPU check, 5 sun light function).
+for %%v in ("0 0 0" "1 0 0" "1 1 0" "0 0 1" "1 0 1" "1 0 2" "1 1 2" "2 0 2" "2 1 2" "1 0 3" "1 1 3" "2 0 3" "2 1 3" "1 0 4" "1 1 4" "0 0 4" "0 0 5" "0 1 5" "1 0 5" "1 1 5" "2 0 5" "2 1 5" "3 0 5" "3 1 5" "4 0 5" "4 1 5" "5 0 5" "5 1 5") do for /f "tokens=1,2,3" %%a in (%%v) do (
 	dxc -nologo -T ps_6_6 -E main -HV 2018 -DRENDER_ATLAS=%%a -DSKY_WORLD=%%b -DLEGACY_MATERIAL=%%c -I "%ROOT%\Shaders" -Fo "%ROOT%\Build\dxc_check_%%a%%b%%c.dxil" "%HERE%dxc_check.hlsl" || exit /b 1
 	fxc /nologo /T ps_5_0 /E main /O1 /DRENDER_ATLAS=%%a /DSKY_WORLD=%%b /DLEGACY_MATERIAL=%%c /I "%ROOT%\Shaders" /Fo "%ROOT%\Build\fxc_check_%%a%%b%%c.dxbc" "%HERE%dxc_check.hlsl" >nul || exit /b 1
 )

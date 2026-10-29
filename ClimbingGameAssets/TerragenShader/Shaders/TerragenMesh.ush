@@ -1,0 +1,435 @@
+// TerragenMesh.ush - Terragen's surface shading on ordinary meshes, and the "Terragen look" post-process maths.
+//
+// The terrain renderer (Terragen.ush) finds a point on the heightfield and shades it: the surface-layer tree
+// (colour from noise, altitude and slope, plus bump), the sun and ambient light, then the atmosphere between
+// the camera and the point and the tone curve. Everything after the ray march only needs a position and a
+// normal, so a mesh pixel can be shaded the same way:
+//   - TG_MeshSurface: the layer tree at a mesh point. Altitude is the point's own Terragen z and the slope
+//     comes from its normal, so a rock gets the snow, grass or cliff colours the terrain has at that height
+//     and steepness. Coverage noise reads the same world x, y as the terrain, so the patches line up with the
+//     terrain behind. Bump noise is projected on the axis plane nearest the normal (blended near the 45-degree
+//     boundaries); for an upward face that is the terrain's own x, y plane, so a mesh lying on the terrain
+//     shades like the terrain under it (Tests/tg_mesh_test.cpp checks this).
+//   - TG_ShadeMesh: plus Terragen's light, for unlit materials (an exact Terragen pixel, without mesh shadows).
+//   - TG_MeshLightProbe: the sun and ambient colours for lighting meshes with Unreal's own lights instead.
+//   - TG_AtmosphereFast: the haze, blue and red layers between two points: Terragen's own march, with its
+//     number of steps capped for a full-screen pass.
+//   - TG_LookColour and TG_AtlasSnap: the post-process. It converts every pixel to Terragen's display colour
+//     (atmosphere and tone curve, or the sky's own display value), on the terrain atlas's texel grid, so
+//     meshes soften exactly as the picture behind them does.
+// Distances are Terragen units (grid steps). Unreal positions come in as offsets from the ATerragenSkybox, in
+// centimetres. Like Terragen.ush, this compiles as C++ too (Tests/tg_mesh_test.cpp).
+
+#ifndef TERRAGEN_MESH_USH
+#define TERRAGEN_MESH_USH
+
+#include "TerragenUE.ush"
+
+// ---------------------------------------------------------------- positions
+
+// Terragen coordinates of an Unreal point given as its offset from the skybox actor, in centimetres
+// (ATerragenSkybox::ToTerragen with FollowHorizontal on: meshes always sit at their true place).
+float3 TG_FromUEOffset(float3 OffsetCm, float3 TerragenStart, float CentimetresPerUnit, float HeadingAtPlusX)
+{
+	return TerragenStart + TG_FromUEDirection(OffsetCm / CentimetresPerUnit, HeadingAtPlusX);
+}
+
+// Detail footprint of a mesh point at Distance units from the camera. PixelAngle is the terrain atlas's
+// (TG_ProjectionPixelAngle), not the screen's, so meshes stop at the same detail as the picture behind them.
+float TG_MeshFootprint(TGWorld W, float Distance, float PixelAngle)
+{
+	return max(Distance * PixelAngle / max(W.Detail, 0.01), 1e-4);
+}
+
+// ---------------------------------------------------------------- surface
+
+struct TGMeshSurface
+{
+	float3 Colour;   // albedo from the layer tree
+	float3 Normal;   // shading normal with the bump, Terragen space
+};
+
+// Unit vector of axis i (0 x, 1 y, 2 z).
+float3 TG_AxisVector(int i)
+{
+	return i == 0 ? float3(1.0, 0.0, 0.0) : (i == 1 ? float3(0.0, 1.0, 0.0) : float3(0.0, 0.0, 1.0));
+}
+
+// The frame for a normal N on axis i: the other two axes span the plane, Axis points out of the surface.
+// Only an upward face on z is Flat, which makes it shade exactly like the terrain.
+TGFrame TG_MeshFrame(float3 N, int i)
+{
+	TGFrame F;
+	float3 a = TG_AxisVector(i);
+	float s = dot(N, a) >= 0.0 ? 1.0 : -1.0;
+	F.Axis = a * s;
+	F.T1 = i == 0 ? float3(0.0, 1.0, 0.0) : float3(1.0, 0.0, 0.0);
+	F.T2 = i == 2 ? float3(0.0, 1.0, 0.0) : float3(0.0, 0.0, 1.0);
+	F.Flat = (i == 2 && s > 0.0) ? 1.0 : 0.0;
+	return F;
+}
+
+// The layer tree at point P with normal N, its bump projected on axis plane i.
+TGMeshSurface TG_MeshSurfaceOnAxis(TGWorld W, Texture2D NoiseTex, float3 P, float3 N, float footprint, int MaxLevels, int i)
+{
+	TGFrame F = TG_MeshFrame(N, i);
+	// The gradient whose frame normal is N: for an upward face, the terrain's dz/dx and dz/dy.
+	float na = max(dot(N, F.Axis), 0.05);
+	float2 g0 = float2(-dot(N, F.T1), -dot(N, F.T2)) * (1.0 / na);
+	// Jitter by up to a footprint in the plane, as TG_SurfaceTree does, staying on the face's tangent plane.
+	float2 pb = float2(dot(P, F.T1), dot(P, F.T2));
+	float2 j = float2(TG_Hash01(pb.x, pb.y, 1u) * footprint, TG_Hash01(pb.x, pb.y, 2u) * footprint);
+	float3 pj = P + F.T1 * j.x + F.T2 * j.y + F.Axis * (g0.x * j.x + g0.y * j.y);
+	TGSurface S = TG_SurfaceLayers(W, NoiseTex, F, float2(pj.x, pj.y), pj.z, pb + j, g0, footprint, MaxLevels);
+	TGMeshSurface R;
+	R.Colour = S.Colour;
+	R.Normal = TG_FrameNormal(F, S.Grad);
+	return R;
+}
+
+// How much axis plane i shades a normal: 1 for the nearest plane, falling to 0 for planes whose normal
+// component is under 0.8 of the largest. Continuous in N, so blending by these weights leaves no seam.
+float TG_MeshPlaneWeight(float3 N, int i)
+{
+	float3 a = float3(abs(N.x), abs(N.y), abs(N.z));
+	float amax = max(a.x, max(a.y, a.z));
+	return saturate((dot(a, TG_AxisVector(i)) / max(amax, 1e-6) - 0.8) / 0.2);
+}
+
+// The layer tree at a mesh point (Terragen position P, unit geometric normal N). Each axis plane near N shades
+// it (usually only one; two near the 45-degree boundaries, three near a cube corner direction) and the results
+// are blended by TG_MeshPlaneWeight. MaxLevels caps the bump levels (TG_MAX_LEVELS - 1 = Terragen's own detail).
+TGMeshSurface TG_MeshSurface(TGWorld W, Texture2D NoiseTex, float3 P, float3 N, float footprint, int MaxLevels)
+{
+	TGMeshSurface R;
+	R.Colour = float3(0.0, 0.0, 0.0);
+	R.Normal = float3(0.0, 0.0, 0.0);
+	float total = 0.0;
+	// z first: an upward face is usually the only plane, and then exactly the terrain's.
+	TG_LOOP for (int k = 0; k < 3; k++)
+	{
+		int i = 2 - k;
+		float w = TG_MeshPlaneWeight(N, i);
+		if (w > 0.0)
+		{
+			TGMeshSurface Ri = TG_MeshSurfaceOnAxis(W, NoiseTex, P, N, footprint, MaxLevels, i);
+			R.Colour = R.Colour + Ri.Colour * w;
+			R.Normal = R.Normal + Ri.Normal * w;
+			total += w;
+		}
+	}
+	R.Colour = R.Colour * (1.0 / total);
+	R.Normal = normalize(R.Normal);
+	return R;
+}
+
+// ---------------------------------------------------------------- light
+
+// Sunlight reaching P, Terragen's sun colour through the atmosphere and the clouds (as TG_ShadeTerrain lights
+// the terrain, before shadow and N.L).
+float3 TG_MeshSunLight(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 P)
+{
+	float hc = TG_CloudHeight(W, P);
+	return W.SunColour * TG_SunTransmittance(W, TG_AtmosHeight(W, P)) * TG_CloudSunFactor(W, CloudTex, S, P, hc, P, hc);
+}
+
+// Background light as one constant: exact for "single colour" (both worlds so far); the multi-directional
+// terms are averaged over all normals, where each wrap term is a half.
+float3 TG_MeshAmbient(TGWorld W)
+{
+	return W.Ambient + (W.AmbientUp + W.AmbientAway + W.AmbientSun) * 0.5;
+}
+
+// For Unreal's lights: Index 0 is the sun's colour at P through the atmosphere (TG_MeshSunLight without the
+// clouds, which TG_MeshCloudLight adds per pixel), 1 the ambient. Linear, in Terragen's units (1 = white). A
+// directional light of intensity pi times the sun colour, with TG_MeshCloudLight as its light function, and a
+// sky light whose cubemap is a constant ambient, light a Lambert surface as Terragen's light equation does (with
+// the atmosphere's sun transmittance taken at P for the whole level).
+float4 TG_MeshLightProbe(TGWorld W, Texture2D CloudTex, float3 P, float Index)
+{
+	float3 c = Index < 0.5 ? W.SunColour * TG_SunTransmittance(W, TG_AtmosHeight(W, P)) : TG_MeshAmbient(W);
+	return float4(c.x, c.y, c.z, 1.0);
+}
+
+// The clouds' share of the sunlight at P (0..1): their shadow, or their uniform dimming in worlds where clouds
+// don't cast shadows. M_TerragenSunLight runs it as the directional light's light function.
+float TG_MeshCloudLight(TGWorld W, Texture2D CloudTex, float3 P)
+{
+	float hc = TG_CloudHeight(W, P);
+	return saturate(TG_CloudSunFactor(W, CloudTex, TG_MakeSun(W), P, hc, P, hc));
+}
+
+// A mesh pixel lit Terragen's way, linear (before atmosphere and tone curve): colour, sun through the
+// atmosphere and clouds, N.L, constant ambient. TerrainShadows adds the Terragen terrain's soft shadow at
+// P (only right where the level lines up with the Terragen ground); meshes don't shadow themselves here.
+TGShadeResult TG_ShadeMesh(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 P, float3 N, float footprint,
+                           int MaxLevels, float TerrainShadows)
+{
+	TGSunInfo S = TG_MakeSun(W);
+	TGMeshSurface surf = TG_MeshSurface(W, NoiseTex, P, N, footprint, MaxLevels);
+	float shadow = 0.0;
+	float n = (float)W.Terrain.Cells;
+	if (TerrainShadows != 0.0 && W.LandShadows != 0.0 && P.x >= 0.0 && P.y >= 0.0 && P.x <= n && P.y <= n)
+	{
+		shadow = TG_SunShadow(HeightTex, W.Terrain, S, P.x, P.y, P.z);
+	}
+	float smoothShadow = shadow * shadow * (3.0 - 2.0 * shadow);
+	float ndl = dot(surf.Normal, S.Dir);
+	TGShadeResult R = TG_EmptyResult(W);
+	R.Alpha = 1.0;
+	R.Kind = 1;
+	R.Albedo = surf.Colour;
+	R.SunTerm = (1.0 - smoothShadow) * max(ndl, 0.0);
+	R.NdotL = ndl;
+	R.NormalZ = surf.Normal.z;
+	R.Linear = surf.Colour * TG_Light(W, S, surf.Normal, TG_MeshSunLight(W, CloudTex, S, P) * R.SunTerm);
+	return R;
+}
+
+// ---------------------------------------------------------------- atmosphere
+
+// TG_Atmosphere between the camera side p0 and the far point p1, with at most Segments march steps. Up to that
+// many of the world's atmosphere steps it is TG_Atmosphere itself, so a mesh gets exactly the haze the terrain
+// behind it gets; worlds step coarsely (Prototype2World's step is 32 units, 480 m), so 16 covers the whole
+// terrain there. Longer, the march takes Segments longer steps instead, as the sky pass's AtmosQuality does
+// (the cloud-shadow grid stays the world's). Tests/tg_mesh_test.cpp measures both.
+float3 TG_AtmosphereFast(TGWorld W, Texture2D CloudTex, TGSunInfo S, float3 p0, float3 p1, float glow, float3 colour, int Segments)
+{
+	if (W.Atmos.On == 0.0)
+	{
+		return colour;
+	}
+	float len = length(p1 - p0);
+	// TG_AtmosMarch's step: the world's, or longer for a march that would exceed TG_MAX_ATMOS_STEPS.
+	float steps = len / max(W.Atmos.Step, len / (float)TG_MAX_ATMOS_STEPS);
+	float n = (float)max(Segments, 1);
+	if (steps > n)
+	{
+		W.Atmos.Step = len / n;
+	}
+	return TG_Atmosphere(W, CloudTex, S, p0, p1, glow, colour);
+}
+
+// ---------------------------------------------------------------- the post-process
+
+// The display colour (0..1, what Terragen writes) of one screen sample. Sky: the sky sphere shows the atlas
+// decoded as sRGB, so encoding it again gives the atlas's bytes back. Anything else is a linear Unreal colour
+// in Terragen's units (a mesh lit as TG_MeshLightProbe describes, or TG_ShadeMesh): add the atmosphere from the
+// camera Cam to the point P along D, then the world's exposure and tone curve.
+float3 TG_LookColour(TGWorld W, Texture2D CloudTex, float3 Linear, float3 Cam, float3 P, float3 D, float IsSky, int Segments)
+{
+	if (IsSky != 0.0)
+	{
+		float3 s = TG_LinearToSRGB(Linear);
+		return float3(saturate(s.x), saturate(s.y), saturate(s.z));
+	}
+	TGSunInfo S = TG_MakeSun(W);
+	float glow = TG_Glow(W, dot(normalize(D), S.Dir), 1.0, W.Atmos.GlowFlag);
+	return TG_ToneMap(W, TG_AtmosphereFast(W, CloudTex, S, Cam, P, glow, float3(max(Linear.x, 0.0), max(Linear.y, 0.0), max(Linear.z, 0.0)), Segments));
+}
+
+// The four terrain-atlas texel centres around a view direction, as the sky sphere's bilinear lookup reads them,
+// and the blend weights between them (F, along the atlas's x and y). The post-process samples the screen in
+// those four directions and blends their display colours, so a mesh is shown at the atlas's resolution, on the
+// same grid as the sky. Corners stay inside the direction's own cube face (the sphere map wraps round).
+struct TGAtlasSnap
+{
+	float3 D00;
+	float3 D10;
+	float3 D01;
+	float3 D11;
+	float2 F;
+	float2 T0;       // atlas texel of D00; D11's is T1, D10's (T1.x, T0.y), D01's (T0.x, T1.y)
+	float2 T1;
+	float2 Size;     // the atlas in texels
+};
+
+float3 TG_AtlasTexelDirection(float2 Texel, float2 Size, float AtlasHeading, float FaceSize, float Projection)
+{
+	float4 d = TG_ProjectionDirection(float2((Texel.x + 0.5) / Size.x, (Texel.y + 0.5) / Size.y), AtlasHeading, FaceSize, Projection);
+	return normalize(float3(d.x, d.y, d.z));
+}
+
+TGAtlasSnap TG_AtlasSnap(float3 Dir, float AtlasHeading, float FaceSize, float Projection)
+{
+	float2 size = Projection != 0.0 ? float2(4.0 * FaceSize, 2.0 * FaceSize) : float2(4.0 * FaceSize, 4.0 * FaceSize);
+	float2 uv = TG_ProjectionUV(Dir, AtlasHeading, FaceSize, Projection);
+	float px = uv.x * size.x - 0.5;
+	float py = uv.y * size.y - 0.5;
+	float x0 = floor(px);
+	float y0 = floor(py);
+	float2 lo = float2(-1e9, 0.0);
+	float2 hi = float2(1e9, size.y - 1.0);
+	if (Projection == 0.0)
+	{
+		TGAtlasFace face = TG_GetAtlasFace(max(TG_AtlasFaceAt(float2(uv.x * size.x, uv.y * size.y), FaceSize), 0));
+		lo = face.Origin * FaceSize;
+		hi = lo + float2(FaceSize - 1.0, FaceSize - 1.0);
+	}
+	float xa = clamp(x0, lo.x, hi.x);
+	float xb = clamp(x0 + 1.0, lo.x, hi.x);
+	float ya = clamp(y0, lo.y, hi.y);
+	float yb = clamp(y0 + 1.0, lo.y, hi.y);
+	TGAtlasSnap R;
+	R.D00 = TG_AtlasTexelDirection(float2(xa, ya), size, AtlasHeading, FaceSize, Projection);
+	R.D10 = TG_AtlasTexelDirection(float2(xb, ya), size, AtlasHeading, FaceSize, Projection);
+	R.D01 = TG_AtlasTexelDirection(float2(xa, yb), size, AtlasHeading, FaceSize, Projection);
+	R.D11 = TG_AtlasTexelDirection(float2(xb, yb), size, AtlasHeading, FaceSize, Projection);
+	R.F = float2(px - x0, py - y0);
+	R.T0 = float2(xa, ya);
+	R.T1 = float2(xb, yb);
+	R.Size = size;
+	return R;
+}
+
+float3 TG_SnapBlend(TGAtlasSnap Sn, float3 c00, float3 c10, float3 c01, float3 c11)
+{
+	return lerp(lerp(c00, c10, Sn.F.x), lerp(c01, c11, Sn.F.x), Sn.F.y);
+}
+
+// Where in its texel the post-process samples atlas texel Texel, as an offset from the centre in texels along
+// the atlas's x and y: up to Amount / 2 either way. Terragen shades each micro-polygon at a point jittered by up
+// to a footprint (TG_SurfaceTree), which gives its pictures their fine speckle; this does the same per texel. It
+// depends only on the texel (wrapped round the sphere map's seam), so it holds still as the camera turns.
+float2 TG_TexelJitter(float2 Texel, float2 Size, float Amount)
+{
+	float x = Texel.x - Size.x * floor(Texel.x / Size.x);
+	return float2(TG_Hash01(x, Texel.y, 3u) - 0.5, TG_Hash01(x, Texel.y, 4u) - 0.5) * Amount;
+}
+
+// One atlas texel's axes on screen (xy: one texel along the atlas's x, zw: along its y), from where the four
+// corners' centres land (viewport UV). A clamped corner pair (a cube face's last row) uses the other pair.
+float4 TG_SnapScreenAxes(float2 s00, float2 s10, float2 s01, float2 s11)
+{
+	float2 e1 = s10 - s00;
+	if (e1.x * e1.x + e1.y * e1.y < 1e-14)
+	{
+		e1 = s11 - s01;
+	}
+	float2 e2 = s01 - s00;
+	if (e2.x * e2.x + e2.y * e2.y < 1e-14)
+	{
+		e2 = s11 - s10;
+	}
+	return float4(e1.x, e1.y, e2.x, e2.y);
+}
+
+// Prefilter tap Tap (0..3) of a texel whose centre is at Centre on screen: a 2 x 2 pattern a quarter texel from
+// the jittered point, so four bilinear reads (2 x 2 pixels each) cover about the texel's footprint and average
+// it, as Terragen's micro-polygons average their area. Prefilter scales the pattern (0 = one point).
+float2 TG_SnapTap(float2 Centre, float4 Axes, float2 Jitter, float Prefilter, int Tap)
+{
+	float a = ((Tap & 1) != 0 ? 0.25 : -0.25) * Prefilter + Jitter.x;
+	float b = ((Tap & 2) != 0 ? 0.25 : -0.25) * Prefilter + Jitter.y;
+	return float2(Centre.x + Axes.x * a + Axes.z * b, Centre.y + Axes.y * a + Axes.w * b);
+}
+
+// ---------------------------------------------------------------- material entry points
+// What the Custom nodes of the materials Tools/ue_mesh_setup.py makes call, with their inputs as they are in
+// Unreal: offsets from the skybox actor in centimetres, Unreal directions, and the placement from the actor's
+// material parameter collection (MPC_Terragen). DetailScale multiplies the footprint (2 = half the detail).
+
+// M_TerragenMesh (lit): albedo, and the bumped normal back in Unreal world space.
+TGMeshSurface TG_MeshMaterialSurface(TGWorld W, Texture2D NoiseTex, float3 OffsetCm, float3 CameraOffsetCm, float3 NormalUE,
+                                     float3 TerragenStart, float CentimetresPerUnit, float HeadingAtPlusX, float FaceSize,
+                                     float Projection, float DetailScale, float MaxLevels)
+{
+	float3 P = TG_FromUEOffset(OffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX);
+	float dist = length(OffsetCm - CameraOffsetCm) / CentimetresPerUnit;
+	float fp = TG_MeshFootprint(W, dist, TG_ProjectionPixelAngle(FaceSize, Projection) * max(DetailScale, 0.01));
+	float3 N = TG_FromUEDirection(normalize(NormalUE), HeadingAtPlusX);
+	TGMeshSurface S = TG_MeshSurface(W, NoiseTex, P, N, fp, (int)MaxLevels);
+	S.Normal = TG_ToUEDirection(S.Normal, HeadingAtPlusX);
+	return S;
+}
+
+// M_TerragenMeshUnlit: Terragen's own light, linear for the look post-process (which adds the atmosphere and
+// the tone curve). Standalone = 1 adds those here instead and returns the display colour decoded as sRGB, as
+// the sky sphere does, for scenes without the post-process.
+float3 TG_MeshMaterialUnlit(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float3 OffsetCm, float3 CameraOffsetCm,
+                            float3 NormalUE, float3 TerragenStart, float CentimetresPerUnit, float HeadingAtPlusX, float FaceSize,
+                            float Projection, float DetailScale, float MaxLevels, float TerrainShadows, float Standalone, float Segments)
+{
+	float3 P = TG_FromUEOffset(OffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX);
+	float3 C = TG_FromUEOffset(CameraOffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX);
+	float fp = TG_MeshFootprint(W, length(P - C), TG_ProjectionPixelAngle(FaceSize, Projection) * max(DetailScale, 0.01));
+	float3 N = TG_FromUEDirection(normalize(NormalUE), HeadingAtPlusX);
+	float3 c = TG_ShadeMesh(W, HeightTex, NoiseTex, CloudTex, P, N, fp, (int)MaxLevels, TerrainShadows).Linear;
+	if (Standalone != 0.0)
+	{
+		c = TG_SRGBToLinear(TG_LookColour(W, CloudTex, c, C, P, P - C, 0.0, (int)Segments));
+	}
+	return c;
+}
+
+// M_TerragenSunLight (the directional light's light function): the clouds' share of the sun at a lit point.
+float TG_MeshMaterialCloudLight(TGWorld W, Texture2D CloudTex, float3 OffsetCm, float3 TerragenStart, float CentimetresPerUnit, float HeadingAtPlusX)
+{
+	return TG_MeshCloudLight(W, CloudTex, TG_FromUEOffset(OffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX));
+}
+
+// PP_TerragenLook, one screen sample: its linear colour (scene colour without Unreal's pre-exposure), its scene
+// depth (view-space z, cm) and Unreal view direction. A sample at the sky sphere's distance or beyond is sky.
+float3 TG_LookSample(TGWorld W, Texture2D CloudTex, float3 Linear, float SceneDepthCm, float3 DirUE, float3 ViewForwardUE,
+                     float3 CameraOffsetCm, float3 TerragenStart, float CentimetresPerUnit, float HeadingAtPlusX, float SkyRadiusCm,
+                     float Segments)
+{
+	float3 d = normalize(DirUE);
+	float dist = SceneDepthCm / max(dot(d, ViewForwardUE), 1e-4);
+	float3 cam = TG_FromUEOffset(CameraOffsetCm, TerragenStart, CentimetresPerUnit, HeadingAtPlusX);
+	float3 D = TG_FromUEDirection(d, HeadingAtPlusX);
+	return TG_LookColour(W, CloudTex, Linear, cam, cam + D * (dist / CentimetresPerUnit), D, dist >= 0.98 * SkyRadiusCm ? 1.0 : 0.0, (int)Segments);
+}
+
+// ---------------------------------------------------------------- GPU check
+// M_TerragenMeshCheck draws this into a 32 x 32 floating-point target, and Tests/tg_mesh_test.cpp --gpu compares
+// the read-back texels with the same function on the CPU. Texel (x, y): a point on a small patch around Start,
+// a normal sweeping all azimuths (x) and elevations from straight down to straight up (y), and a footprint
+// from coarse to fine (y). Mode 0 returns the albedo, 1 the shading normal * 0.5 + 0.5, 2 TG_ShadeMesh's linear
+// colour (with the terrain's shadows), 3 TG_LookColour of that colour seen from 2 units away. Mode 4 is only for
+// timing the look on its own: four TG_LookColour samples (as PP_TerragenLook takes per pixel) at distances
+// from 10 cm to 9 km, averaged.
+float3 TG_MeshCheckTexel(TGWorld W, Texture2D HeightTex, Texture2D NoiseTex, Texture2D CloudTex, float2 Texel, float3 Start, float Mode)
+{
+	float3 P = Start + float3((Texel.x - 15.5) * 0.37, (Texel.y - 15.5) * 0.37, (Texel.x - Texel.y) * 0.05);
+	float a = Texel.x / 32.0 * 6.2831853;
+	float e = Texel.y / 31.0 * 3.1 - 1.55;
+	float3 N = float3(cos(e) * sin(a), cos(e) * cos(a), sin(e));
+	float fp = exp2(-2.0 - Texel.y / 4.0);
+	float3 c = float3(0.0, 0.0, 0.0);
+	if (Mode > 4.5)
+	{
+		// Mode 5: the clouds' share of the sun on a 32 x 32 grid 2.5 units apart around Start, at its altitude, or 0
+		// where that point is under the Terragen ground (Tools/ue_mesh_setup.py looks for a sunlit spot in the open
+		// for its test meshes).
+		float3 q = Start + float3((Texel.x - 15.5) * 2.5, (Texel.y - 15.5) * 2.5, 0.0);
+		float f = TG_TerrainHeight(HeightTex, W.Terrain, q.x, q.y) < q.z - 0.2 ? TG_MeshCloudLight(W, CloudTex, q) : 0.0;
+		c = float3(f, f, f);
+	}
+	else if (Mode > 3.5)
+	{
+		TG_LOOP for (int k = 0; k < 4; k++)
+		{
+			float3 d = normalize(float3(N.x, N.y, N.z - 0.5));
+			float dist = exp2(-7.0 + Texel.x * 0.5 + (float)k * 0.25);
+			c = c + TG_LookColour(W, CloudTex, float3(0.3, 0.3, 0.3), P, P + d * dist, d, 0.0, 24) * 0.25;
+		}
+	}
+	else if (Mode < 1.5)
+	{
+		TGMeshSurface S = TG_MeshSurface(W, NoiseTex, P, N, fp, TG_MAX_LEVELS - 1);
+		c = Mode < 0.5 ? S.Colour : S.Normal * 0.5 + float3(0.5, 0.5, 0.5);
+	}
+	else
+	{
+		c = TG_ShadeMesh(W, HeightTex, NoiseTex, CloudTex, P, N, fp, TG_MAX_LEVELS - 1, 1.0).Linear;
+		if (Mode > 2.5)
+		{
+			float3 cam = P + N * 2.0;
+			c = TG_LookColour(W, CloudTex, c, cam, P, P - cam, 0.0, 24);
+		}
+	}
+	return c;
+}
+
+#endif // TERRAGEN_MESH_USH
