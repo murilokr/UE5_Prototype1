@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0",
+	"FriendlyName": "Terragen",
+	"Description": "A live skybox that renders Terragen 0.9 worlds in a shader, plus materials and a post-process that give level meshes the same look.",
+	"Category": "Rendering",
+	"CreatedBy": "Murilo KR",
+	"CreatedByURL": "",
+	"DocsURL": "",
+	"MarketplaceURL": "",
+	"SupportURL": "",
+	"EnabledByDefault": true,
+	"CanContainContent": true,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "TerragenShaders",
+			"Type": "Runtime",
+			"LoadingPhase": "PostConfigInit"
+		},
+		{
+			"Name": "Terragen",
+			"Type": "Runtime",
+			"LoadingPhase": "Default"
+		}
+	]
+}

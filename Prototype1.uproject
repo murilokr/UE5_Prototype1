@@ -8,14 +8,13 @@
 			"Name": "Prototype1",
 			"Type": "Runtime",
 			"LoadingPhase": "Default"
-		},
-		{
-			"Name": "TerragenShaders",
-			"Type": "Runtime",
-			"LoadingPhase": "PostConfigInit"
 		}
 	],
 	"Plugins": [
+		{
+			"Name": "Terragen",
+			"Enabled": true
+		},
 		{
 			"Name": "ModelingToolsEditorMode",
 			"Enabled": true,

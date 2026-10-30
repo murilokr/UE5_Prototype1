@@ -11,6 +11,5 @@ public class Prototype1Target : TargetRules
 		DefaultBuildSettings = BuildSettingsVersion.V5;
 		IncludeOrderVersion = EngineIncludeOrderVersion.Unreal5_4;
 		ExtraModuleNames.Add("Prototype1");
-		ExtraModuleNames.Add("TerragenShaders");
 	}
 }

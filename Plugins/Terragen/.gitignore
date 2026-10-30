@@ -1,0 +1,9 @@
+# Build products: the editor and UBT regenerate these
+Binaries/
+Intermediate/
+# Compiled test renderer and DXC/FXC output (Tests/build.cmd)
+Build/
+# Test renders, comparisons and per-pixel debug data (regenerate with Tests/tg_render, Tools/compare.py and the ue_*.py tools)
+Out/
+# Python bytecode
+__pycache__/

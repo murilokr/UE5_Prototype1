@@ -1,0 +1,38 @@
+{
+  "_comment": [
+    "The Terragen worlds the tools know about. Adding one: put an entry here, run Tools/build_world.py <Name>",
+    "to generate Shaders/Worlds/<Name>.ush (and its cloud map), then Tools/ue_setup.py with TG_WORLD=<Name> to",
+    "make its Unreal assets, including DA_TerragenWorld_<Name> for ATerragenSkybox. Paths are relative to the",
+    "plugin's folder.",
+    "  tgw       the Terragen world file",
+    "  ter       its terrain (.ter); ter_convert.py turns it into Data/Textures/<terrain>_height.png/.r16 and .json",
+    "  ush_args  extra tgw_to_ush.py options (overrides recovered from reference renders, see README)",
+    "  clouds    generate and use a cloud map (worlds with the sky on)",
+    "  start     Terragen camera at the skybox actor's location (TerragenStart)",
+    "  heading   Terragen heading along Unreal +X, also the atlas's Front face",
+    "  sun       sun heading and altitude the world renders with, for the level's directional light",
+    "  frames    frames ue_setup.py's GPU check renders (the camera rises 0.067 units per frame)"
+  ],
+  "MountainTop": {
+    "display_name": "Mountain top (sky off)",
+    "tgw": "Data/Worlds/WorldNewLocationAndAtmosphere.tgw",
+    "ter": "Data/Worlds/prototype2_v2.ter",
+    "ush_args": ["--pre-sky"],
+    "clouds": false,
+    "start": [164.0, 223.0, 45.647],
+    "heading": 18.0,
+    "sun": [260.0, 43.0],
+    "frames": [1, 400]
+  },
+  "Prototype2World": {
+    "display_name": "Prototype 2 world (sky, clouds, water)",
+    "tgw": "Data/Worlds/Prototype2World.tgw",
+    "ter": "Data/Worlds/prototype2_v2.ter",
+    "ush_args": ["--sun", "24", "48", "--cloud-shadows", "1"],
+    "clouds": true,
+    "start": [198.0, 270.0, 16.43],
+    "heading": 18.0,
+    "sun": [24.0, 48.0],
+    "frames": [1]
+  }
+}
